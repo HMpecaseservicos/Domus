@@ -51,7 +51,10 @@
                 </div>
                 <div class="auth-form-group">
                     <label for="auth-login-pass"><i class="fas fa-lock"></i> Senha</label>
-                    <input id="auth-login-pass" type="password" class="auth-input" placeholder="Digite sua senha" required />
+                    <div class="auth-input-wrapper">
+                        <input id="auth-login-pass" type="password" class="auth-input" placeholder="Digite sua senha" required />
+                        <button type="button" class="auth-toggle-pass" onclick="togglePassVisibility(this)" title="Mostrar senha"><i class="fas fa-eye"></i></button>
+                    </div>
                 </div>
                 <button type="submit" class="auth-btn auth-btn-primary" id="auth-login-submit">
                     <i class="fas fa-sign-in-alt"></i> Entrar
@@ -65,12 +68,18 @@
                 </div>
                 <div class="auth-form-group">
                     <label for="auth-reg-pass"><i class="fas fa-lock"></i> Senha</label>
-                    <input id="auth-reg-pass" type="password" class="auth-input" placeholder="Crie uma senha segura" required />
+                    <div class="auth-input-wrapper">
+                        <input id="auth-reg-pass" type="password" class="auth-input" placeholder="Crie uma senha segura" required />
+                        <button type="button" class="auth-toggle-pass" onclick="togglePassVisibility(this)" title="Mostrar senha"><i class="fas fa-eye"></i></button>
+                    </div>
                     <small class="auth-hint">Mínimo 6 caracteres, com letra maiúscula, minúscula e número</small>
                 </div>
                 <div class="auth-form-group">
                     <label for="auth-reg-pass2"><i class="fas fa-lock"></i> Confirmar Senha</label>
-                    <input id="auth-reg-pass2" type="password" class="auth-input" placeholder="Confirme sua senha" required />
+                    <div class="auth-input-wrapper">
+                        <input id="auth-reg-pass2" type="password" class="auth-input" placeholder="Confirme sua senha" required />
+                        <button type="button" class="auth-toggle-pass" onclick="togglePassVisibility(this)" title="Mostrar senha"><i class="fas fa-eye"></i></button>
+                    </div>
                 </div>
                 <button type="submit" class="auth-btn auth-btn-primary" id="auth-register-submit">
                     <i class="fas fa-user-plus"></i> Criar Conta
@@ -553,6 +562,23 @@
     <script src="modules/purpose.js"></script>
     <script src="modules/patterns.js"></script>
     <script src="modules/app.js"></script>
+
+    <script>
+        // Toggle password visibility
+        function togglePassVisibility(btn) {
+            const input = btn.parentElement.querySelector('input');
+            const icon = btn.querySelector('i');
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.classList.replace('fa-eye', 'fa-eye-slash');
+                btn.title = 'Esconder senha';
+            } else {
+                input.type = 'password';
+                icon.classList.replace('fa-eye-slash', 'fa-eye');
+                btn.title = 'Mostrar senha';
+            }
+        }
+    </script>
 
     <script>
         // Initialize DOMUS

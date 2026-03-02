@@ -2951,6 +2951,34 @@ textarea:focus,
     line-height: 1.3;
 }
 
+.auth-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.auth-input-wrapper .auth-input {
+    padding-right: 44px;
+}
+
+.auth-toggle-pass {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 4px;
+    transition: color 0.2s;
+}
+
+.auth-toggle-pass:hover {
+    color: rgba(255, 255, 255, 0.85);
+}
+
 /* Buttons */
 .auth-btn {
     padding: 14px 24px;
