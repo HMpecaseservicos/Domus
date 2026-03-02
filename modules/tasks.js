@@ -252,7 +252,7 @@ class TaskManager {
 
     loadData() {
         try {
-            const raw = localStorage.getItem('domus:tasks');
+            const raw = localStorage.getItem(this.auth.getStorageKey('tasks'));
             if (raw) {
                 const parsed = JSON.parse(raw);
                 if (parsed.tasks && Array.isArray(parsed.tasks)) {

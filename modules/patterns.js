@@ -220,7 +220,7 @@ class PatternsManager {
     saveData() {
         try {
             const data = { patterns: this.patterns };
-            localStorage.setItem('domus:patterns', JSON.stringify(data));
+            localStorage.setItem(this.auth.getStorageKey('patterns'), JSON.stringify(data));
         } catch (e) {
             console.warn('Falha ao salvar padrões em localStorage:', e);
         }
@@ -228,7 +228,7 @@ class PatternsManager {
 
     loadData() {
         try {
-            const raw = localStorage.getItem('domus:patterns');
+            const raw = localStorage.getItem(this.auth.getStorageKey('patterns'));
             if (raw) {
                 const parsed = JSON.parse(raw);
                 if (parsed.patterns && Array.isArray(parsed.patterns)) {

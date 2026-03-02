@@ -131,7 +131,7 @@ class GratitudeManager {
     saveData() {
         try {
             const data = { gratitude: this.gratitude };
-            localStorage.setItem('domus:gratitude', JSON.stringify(data));
+            localStorage.setItem(this.auth.getStorageKey('gratitude'), JSON.stringify(data));
         } catch (e) {
             console.warn('Falha ao salvar gratidão em localStorage:', e);
         }
@@ -139,7 +139,7 @@ class GratitudeManager {
 
     loadData() {
         try {
-            const raw = localStorage.getItem('domus:gratitude');
+            const raw = localStorage.getItem(this.auth.getStorageKey('gratitude'));
             if (raw) {
                 const parsed = JSON.parse(raw);
                 if (parsed.gratitude && Array.isArray(parsed.gratitude)) {

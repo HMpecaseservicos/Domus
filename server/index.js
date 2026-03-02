@@ -488,6 +488,40 @@ app.put('/api/finances/:id', authMiddleware, validateId, validateFinance, handle
   }
 });
 
+// Purpose endpoints (one record per user)
+app.get('/api/purpose', authMiddleware, async (req, res) => {
+  try {
+    const row = await get('SELECT * FROM purpose WHERE user_id = ?', [req.user.id]);
+    res.json({ purpose: row || { mission: '', goals: '', values: '' } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.put('/api/purpose', authMiddleware, [
+  body('mission').optional().isLength({ max: 2000 }).trim(),
+  body('goals').optional().isLength({ max: 2000 }).trim(),
+  body('values').optional().isLength({ max: 1000 }).trim(),
+], handleValidationErrors, async (req, res) => {
+  const { mission, goals, values } = req.body;
+  try {
+    const existing = await get('SELECT * FROM purpose WHERE user_id = ?', [req.user.id]);
+    if (existing) {
+      await run('UPDATE purpose SET mission = ?, goals = ?, "values" = ?, updated_at = NOW() WHERE user_id = ?',
+        [mission || '', goals || '', values || '', req.user.id]);
+    } else {
+      await run('INSERT INTO purpose (user_id, mission, goals, "values") VALUES (?, ?, ?, ?) RETURNING id',
+        [req.user.id, mission || '', goals || '', values || '']);
+    }
+    const updated = await get('SELECT * FROM purpose WHERE user_id = ?', [req.user.id]);
+    res.json({ purpose: updated });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 

@@ -13,19 +13,90 @@ class DomusApp {
             theme: 'light',
             userName: 'Usuário'
         };
-        // Don't call init() here — call it from index.html after templates are injected
+
+        // ===== AUTH EVENT HANDLERS =====
+        this.authManager.onLogin(() => this._handleLogin());
+        this.authManager.onLogout(() => this._handleLogout());
     }
 
-    // Initialize application
-    init() {
-        this.loadData();
-        this.setupEventListeners();
+    // ===== AUTH-GATED LIFECYCLE =====
+
+    /** Called after login — load all data from server and show app */
+    async _handleLogin() {
+        this.showApp();
+        this.loadData();      // local cache for this user
         this.initializeModules();
         this.applyTheme();
-        
-        // Setup server data sync when logged in
-        if (this.authManager.getToken()) {
-            this.loadServerData();
+        await this.loadServerData();  // overwrite with server truth
+        this.saveData();              // cache server data locally
+        this.updateAuthHeader();
+    }
+
+    /** Called on logout — clear memory, show auth screen */
+    _handleLogout() {
+        this._clearAllModuleData();
+        this.initializeModules(); // re-render empty
+        this.hideApp();
+    }
+
+    /** Clear in-memory data for all modules (does NOT delete localStorage) */
+    _clearAllModuleData() {
+        this.taskManager.tasks = [];
+        this.financeManager.transactions = [];
+        this.financeManager.income = 0;
+        this.financeManager.expenses = 0;
+        this.thoughtsManager.thoughts = [];
+        this.gratitudeManager.gratitude = [];
+        this.purposeManager.purpose = { mission: '', goals: '', values: '' };
+        this.patternsManager.patterns = [];
+    }
+
+    /** Show/hide app vs auth screen */
+    showApp() {
+        const authScreen = document.getElementById('auth-screen');
+        const appContainer = document.getElementById('app-container');
+        if (authScreen) authScreen.style.display = 'none';
+        if (appContainer) appContainer.style.display = '';
+    }
+
+    hideApp() {
+        const authScreen = document.getElementById('auth-screen');
+        const appContainer = document.getElementById('app-container');
+        if (authScreen) authScreen.style.display = 'flex';
+        if (appContainer) appContainer.style.display = 'none';
+    }
+
+    updateAuthHeader() {
+        const username = this.authManager.getUsername();
+        if (username) {
+            const headerName = document.getElementById('header-user-name');
+            const topbarAvatar = document.getElementById('topbar-avatar');
+            const sidebarAvatar = document.getElementById('sidebar-avatar');
+            const sidebarName = document.getElementById('sidebar-user-name');
+
+            if (headerName) headerName.textContent = username;
+            if (topbarAvatar) topbarAvatar.textContent = username.charAt(0).toUpperCase();
+            if (sidebarAvatar) sidebarAvatar.textContent = username.charAt(0).toUpperCase();
+            if (sidebarName) sidebarName.textContent = username;
+        }
+    }
+
+    // Initialize application (called from index.html)
+    init() {
+        this.setupEventListeners();
+        this.applyTheme();
+
+        // Check if already logged in (token exists and valid)
+        if (this.authManager.isLoggedIn()) {
+            this.showApp();
+            this.loadData();
+            this.initializeModules();
+            this.loadServerData().then(() => {
+                this.saveData();
+                this.updateAuthHeader();
+            });
+        } else {
+            this.hideApp();
         }
     }
 
@@ -126,7 +197,8 @@ class DomusApp {
                 this.taskManager.loadServerData(),
                 this.financeManager.loadServerData(),
                 this.thoughtsManager.loadServerData(),
-                this.gratitudeManager.loadServerData()
+                this.gratitudeManager.loadServerData(),
+                this.purposeManager.loadServerData()
             ]);
             
             this.authManager.showNotification('Dados sincronizados do servidor.', 'success');
@@ -266,7 +338,7 @@ class DomusApp {
         this.patternsManager.saveData();
         
         try {
-            localStorage.setItem('domus:settings', JSON.stringify(this.settings));
+            localStorage.setItem(this.authManager.getStorageKey('settings'), JSON.stringify(this.settings));
         } catch (e) {
             console.warn('Falha ao salvar configurações:', e);
         }
@@ -281,7 +353,7 @@ class DomusApp {
         this.patternsManager.loadData();
         
         try {
-            const raw = localStorage.getItem('domus:settings');
+            const raw = localStorage.getItem(this.authManager.getStorageKey('settings'));
             if (raw) {
                 const parsed = JSON.parse(raw);
                 this.settings = { ...this.settings, ...parsed };

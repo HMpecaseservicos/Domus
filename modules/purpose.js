@@ -57,6 +57,7 @@ class PurposeManager {
         this.renderPurpose();
         this.hidePurposeModal();
         this.saveData();
+        this.syncToServer();
         this.auth.showNotification('Propósito atualizado com sucesso!', 'success');
     }
 
@@ -75,7 +76,7 @@ class PurposeManager {
     saveData() {
         try {
             const data = { purpose: this.purpose };
-            localStorage.setItem('domus:purpose', JSON.stringify(data));
+            localStorage.setItem(this.auth.getStorageKey('purpose'), JSON.stringify(data));
         } catch (e) {
             console.warn('Falha ao salvar propósito em localStorage:', e);
         }
@@ -83,7 +84,7 @@ class PurposeManager {
 
     loadData() {
         try {
-            const raw = localStorage.getItem('domus:purpose');
+            const raw = localStorage.getItem(this.auth.getStorageKey('purpose'));
             if (raw) {
                 const parsed = JSON.parse(raw);
                 if (parsed.purpose && typeof parsed.purpose === 'object') {
@@ -92,6 +93,35 @@ class PurposeManager {
             }
         } catch (e) {
             console.warn('Erro ao carregar propósito do localStorage:', e);
+        }
+    }
+
+    // Server sync
+    async loadServerData() {
+        if (!this.auth.getToken()) return;
+        try {
+            const resp = await this.auth.apiRequest('/api/purpose', { method: 'GET' });
+            if (resp && resp.purpose) {
+                this.purpose.mission = resp.purpose.mission || '';
+                this.purpose.goals = resp.purpose.goals || '';
+                this.purpose.values = resp.purpose.values || '';
+                this.renderPurpose();
+                this.saveData();
+            }
+        } catch (err) {
+            console.warn('Erro ao carregar propósito do servidor:', err);
+        }
+    }
+
+    async syncToServer() {
+        if (!this.auth.getToken()) return;
+        try {
+            await this.auth.apiRequest('/api/purpose', {
+                method: 'PUT',
+                body: JSON.stringify(this.purpose)
+            });
+        } catch (err) {
+            console.warn('Erro ao salvar propósito no servidor:', err);
         }
     }
 

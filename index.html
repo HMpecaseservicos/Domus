@@ -30,6 +30,61 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 </head>
 <body>
+    <!-- ========== AUTH SCREEN ========== -->
+    <div id="auth-screen" class="auth-screen">
+        <div class="auth-bg-shapes">
+            <div class="auth-shape auth-shape-1"></div>
+            <div class="auth-shape auth-shape-2"></div>
+            <div class="auth-shape auth-shape-3"></div>
+        </div>
+        <div class="auth-card">
+            <div class="auth-logo">
+                <div class="auth-logo-icon"><i class="fas fa-cube"></i></div>
+                <h1 class="auth-brand">DOMUS</h1>
+                <p class="auth-tagline">Controle total da sua vida, em um só lugar.</p>
+            </div>
+            <!-- Login Form -->
+            <form id="auth-login-form" class="auth-form" autocomplete="off">
+                <div class="auth-form-group">
+                    <label for="auth-login-user"><i class="fas fa-user"></i> Usuário</label>
+                    <input id="auth-login-user" type="text" class="auth-input" placeholder="Digite seu usuário" required />
+                </div>
+                <div class="auth-form-group">
+                    <label for="auth-login-pass"><i class="fas fa-lock"></i> Senha</label>
+                    <input id="auth-login-pass" type="password" class="auth-input" placeholder="Digite sua senha" required />
+                </div>
+                <button type="submit" class="auth-btn auth-btn-primary" id="auth-login-submit">
+                    <i class="fas fa-sign-in-alt"></i> Entrar
+                </button>
+            </form>
+            <!-- Register Form (hidden by default) -->
+            <form id="auth-register-form" class="auth-form" style="display:none" autocomplete="off">
+                <div class="auth-form-group">
+                    <label for="auth-reg-user"><i class="fas fa-user"></i> Usuário</label>
+                    <input id="auth-reg-user" type="text" class="auth-input" placeholder="Escolha um nome de usuário" required />
+                </div>
+                <div class="auth-form-group">
+                    <label for="auth-reg-pass"><i class="fas fa-lock"></i> Senha</label>
+                    <input id="auth-reg-pass" type="password" class="auth-input" placeholder="Crie uma senha segura" required />
+                </div>
+                <div class="auth-form-group">
+                    <label for="auth-reg-pass2"><i class="fas fa-lock"></i> Confirmar Senha</label>
+                    <input id="auth-reg-pass2" type="password" class="auth-input" placeholder="Confirme sua senha" required />
+                </div>
+                <button type="submit" class="auth-btn auth-btn-primary" id="auth-register-submit">
+                    <i class="fas fa-user-plus"></i> Criar Conta
+                </button>
+            </form>
+            <div class="auth-switch">
+                <span id="auth-switch-to-register">Não tem conta? <strong>Registre-se</strong></span>
+                <span id="auth-switch-to-login" style="display:none">Já tem conta? <strong>Entrar</strong></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== APP CONTAINER (hidden until login) ========== -->
+    <div id="app-container" style="display:none">
+
     <!-- ========== SIDEBAR ========== -->
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
@@ -319,7 +374,49 @@
     <!-- Sidebar overlay for mobile -->
     <div class="sidebar-overlay" id="sidebar-overlay"></div>
 
-    <!-- ========== MODALS ========== -->
+    <!-- ========== BOTTOM NAVIGATION (Mobile) ========== -->
+    <nav class="bottom-nav" id="bottom-nav">
+        <button class="bottom-nav-item active" data-view="home" title="Início">
+            <i class="fas fa-th-large"></i>
+            <span>Início</span>
+        </button>
+        <button class="bottom-nav-item" data-view="tasks" title="Tarefas">
+            <i class="fas fa-check-circle"></i>
+            <span>Tarefas</span>
+        </button>
+        <button class="bottom-nav-item" data-view="finances" title="Finanças">
+            <i class="fas fa-wallet"></i>
+            <span>Finanças</span>
+        </button>
+        <button class="bottom-nav-item" data-view="thoughts" title="Diário">
+            <i class="fas fa-brain"></i>
+            <span>Diário</span>
+        </button>
+        <div class="bottom-nav-more">
+            <button class="bottom-nav-item" id="bottom-nav-more-btn" title="Mais">
+                <i class="fas fa-ellipsis-h"></i>
+                <span>Mais</span>
+            </button>
+            <div class="bottom-nav-more-menu" id="bottom-nav-more-menu">
+                <button class="bottom-nav-more-item" data-view="gratitude">
+                    <i class="fas fa-pray"></i> Espiritual
+                </button>
+                <button class="bottom-nav-more-item" data-view="purpose">
+                    <i class="fas fa-compass"></i> Propósito
+                </button>
+                <button class="bottom-nav-more-item" data-view="patterns">
+                    <i class="fas fa-chart-line"></i> Padrões
+                </button>
+                <button class="bottom-nav-more-item" data-view="data">
+                    <i class="fas fa-database"></i> Dados
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    </div><!-- /app-container -->
+
+    <!-- ========== MODALS (outside app-container) ========== -->
     <div id="modals-container">
         <!-- Login Modal -->
         <div class="modal" id="login-modal">
@@ -433,51 +530,11 @@
         </div>
     </div>
 
-    <!-- Notification -->
+    <!-- Notification (outside app-container, always visible) -->
     <div class="notification" id="notification">
         <i class="fas fa-check-circle"></i>
         <div class="notification-content">Operação realizada com sucesso!</div>
     </div>
-
-    <!-- ========== BOTTOM NAVIGATION (Mobile) ========== -->
-    <nav class="bottom-nav" id="bottom-nav">
-        <button class="bottom-nav-item active" data-view="home" title="Início">
-            <i class="fas fa-th-large"></i>
-            <span>Início</span>
-        </button>
-        <button class="bottom-nav-item" data-view="tasks" title="Tarefas">
-            <i class="fas fa-check-circle"></i>
-            <span>Tarefas</span>
-        </button>
-        <button class="bottom-nav-item" data-view="finances" title="Finanças">
-            <i class="fas fa-wallet"></i>
-            <span>Finanças</span>
-        </button>
-        <button class="bottom-nav-item" data-view="thoughts" title="Diário">
-            <i class="fas fa-brain"></i>
-            <span>Diário</span>
-        </button>
-        <div class="bottom-nav-more">
-            <button class="bottom-nav-item" id="bottom-nav-more-btn" title="Mais">
-                <i class="fas fa-ellipsis-h"></i>
-                <span>Mais</span>
-            </button>
-            <div class="bottom-nav-more-menu" id="bottom-nav-more-menu">
-                <button class="bottom-nav-more-item" data-view="gratitude">
-                    <i class="fas fa-pray"></i> Espiritual
-                </button>
-                <button class="bottom-nav-more-item" data-view="purpose">
-                    <i class="fas fa-compass"></i> Propósito
-                </button>
-                <button class="bottom-nav-more-item" data-view="patterns">
-                    <i class="fas fa-chart-line"></i> Padrões
-                </button>
-                <button class="bottom-nav-more-item" data-view="data">
-                    <i class="fas fa-database"></i> Dados
-                </button>
-            </div>
-        </div>
-    </nav>
 
     <!-- Loading overlay -->
     <div class="loading-overlay" id="loading-overlay" style="display: none;">
@@ -509,6 +566,101 @@
                     .then(reg => console.log('ServiceWorker registered:', reg.scope))
                     .catch(err => console.warn('ServiceWorker failed:', err));
             }
+
+            // ===== AUTH SCREEN LOGIC =====
+            const authLoginForm = document.getElementById('auth-login-form');
+            const authRegForm = document.getElementById('auth-register-form');
+            const switchToRegister = document.getElementById('auth-switch-to-register');
+            const switchToLogin = document.getElementById('auth-switch-to-login');
+
+            if (switchToRegister) switchToRegister.addEventListener('click', () => {
+                authLoginForm.style.display = 'none';
+                authRegForm.style.display = '';
+                switchToRegister.style.display = 'none';
+                switchToLogin.style.display = '';
+            });
+            if (switchToLogin) switchToLogin.addEventListener('click', () => {
+                authRegForm.style.display = 'none';
+                authLoginForm.style.display = '';
+                switchToLogin.style.display = 'none';
+                switchToRegister.style.display = '';
+            });
+
+            // Auth screen login handler
+            if (authLoginForm) authLoginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const username = document.getElementById('auth-login-user').value.trim();
+                const password = document.getElementById('auth-login-pass').value;
+                if (!username || !password) return;
+
+                const btn = document.getElementById('auth-login-submit');
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Entrando...';
+
+                try {
+                    // Use the app's authManager if available
+                    if (window.app && window.app.authManager) {
+                        const resp = await window.app.authManager.apiRequest('/auth/login', {
+                            method: 'POST',
+                            body: JSON.stringify({ username, password })
+                        });
+                        window.app.authManager.setToken(resp.token);
+                        window.app.authManager._fireLogin();
+                    }
+                } catch (err) {
+                    const msg = err.message || 'Falha no login';
+                    if (window.app && window.app.authManager) {
+                        window.app.authManager.showNotification(msg, 'error');
+                    } else {
+                        alert(msg);
+                    }
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Entrar';
+                }
+            });
+
+            // Auth screen register handler
+            if (authRegForm) authRegForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const username = document.getElementById('auth-reg-user').value.trim();
+                const password = document.getElementById('auth-reg-pass').value;
+                const password2 = document.getElementById('auth-reg-pass2').value;
+                if (!username || !password) return;
+                if (password !== password2) {
+                    if (window.app && window.app.authManager) {
+                        window.app.authManager.showNotification('As senhas não coincidem.', 'warning');
+                    } else {
+                        alert('As senhas não coincidem.');
+                    }
+                    return;
+                }
+
+                const btn = document.getElementById('auth-register-submit');
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Criando...';
+
+                try {
+                    if (window.app && window.app.authManager) {
+                        const resp = await window.app.authManager.apiRequest('/auth/register', {
+                            method: 'POST',
+                            body: JSON.stringify({ username, password })
+                        });
+                        window.app.authManager.setToken(resp.token);
+                        window.app.authManager._fireLogin();
+                    }
+                } catch (err) {
+                    const msg = err.message || 'Falha no registro';
+                    if (window.app && window.app.authManager) {
+                        window.app.authManager.showNotification(msg, 'error');
+                    } else {
+                        alert(msg);
+                    }
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-user-plus"></i> Criar Conta';
+                }
+            });
 
             // Wait for all module classes, then bootstrap
             const initApp = () => {

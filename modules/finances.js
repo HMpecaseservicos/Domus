@@ -204,7 +204,7 @@ class FinanceManager {
                 income: this.income,
                 expenses: this.expenses
             };
-            localStorage.setItem('domus:finances', JSON.stringify(data));
+            localStorage.setItem(this.auth.getStorageKey('finances'), JSON.stringify(data));
         } catch (e) {
             console.warn('Falha ao salvar finanças em localStorage:', e);
         }
@@ -212,7 +212,7 @@ class FinanceManager {
 
     loadData() {
         try {
-            const raw = localStorage.getItem('domus:finances');
+            const raw = localStorage.getItem(this.auth.getStorageKey('finances'));
             if (raw) {
                 const parsed = JSON.parse(raw);
                 if (parsed.transactions && Array.isArray(parsed.transactions)) {

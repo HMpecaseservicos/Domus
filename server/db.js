@@ -126,6 +126,18 @@ async function init() {
       );
     `);
 
+    // purpose (one row per user)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS purpose (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        mission TEXT DEFAULT '',
+        goals TEXT DEFAULT '',
+        "values" TEXT DEFAULT '',
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
     // Indexes
     await client.query('CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);');
     await client.query('CREATE INDEX IF NOT EXISTS idx_thoughts_user_id ON thoughts(user_id);');

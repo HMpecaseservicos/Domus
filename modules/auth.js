@@ -4,8 +4,50 @@ class AuthManager {
         this.API_BASE = window.location.hostname === 'localhost' 
             ? 'http://localhost:4000' 
             : window.location.origin;
+        this._onLoginCallbacks = [];
+        this._onLogoutCallbacks = [];
         this.setupEventListeners();
     }
+
+    // ===== USER IDENTITY & STORAGE ISOLATION =====
+    
+    /** Decode JWT to get user id without API call */
+    getUserId() {
+        const token = this.getToken();
+        if (!token) return null;
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            return payload.id;
+        } catch { return null; }
+    }
+
+    getUsername() {
+        const token = this.getToken();
+        if (!token) return null;
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            return payload.username;
+        } catch { return null; }
+    }
+
+    /** Get namespaced localStorage key for current user */
+    getStorageKey(module) {
+        const userId = this.getUserId();
+        if (!userId) return `domus:anon:${module}`;
+        return `domus:${userId}:${module}`;
+    }
+
+    isLoggedIn() {
+        return !!this.getToken() && !!this.getUserId();
+    }
+
+    // ===== EVENT CALLBACKS =====
+    
+    onLogin(callback) { this._onLoginCallbacks.push(callback); }
+    onLogout(callback) { this._onLogoutCallbacks.push(callback); }
+
+    _fireLogin() { this._onLoginCallbacks.forEach(cb => cb()); }
+    _fireLogout() { this._onLogoutCallbacks.forEach(cb => cb()); }
 
     // Token helpers
     setToken(token) { 
@@ -112,7 +154,8 @@ class AuthManager {
                 this.showModal('register-modal');
             });
             if (logoutBtn) logoutBtn.addEventListener('click', () => { 
-                this.clearToken(); 
+                this.clearToken();
+                this._fireLogout();
                 this.showNotification('Desconectado', 'info'); 
             });
 
@@ -166,10 +209,8 @@ class AuthManager {
             this.hideAllModals();
             this.showNotification('Autenticado com sucesso!', 'success');
             
-            // Trigger data sync
-            if (window.app && window.app.loadServerData) {
-                window.app.loadServerData();
-            }
+            // Fire login event (app will reload data from server)
+            this._fireLogin();
         } catch (err) {
             this.showNotification(err.message || 'Falha no login', 'error');
             console.error(err);
@@ -199,10 +240,8 @@ class AuthManager {
             this.hideAllModals();
             this.showNotification('Conta criada e autenticada!', 'success');
             
-            // Trigger data sync
-            if (window.app && window.app.loadServerData) {
-                window.app.loadServerData();
-            }
+            // Fire login event (app will reload data from server)
+            this._fireLogin();
         } catch (err) {
             this.showNotification(err.message || 'Falha no registro', 'error');
             console.error(err);

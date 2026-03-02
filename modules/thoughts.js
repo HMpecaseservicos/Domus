@@ -184,7 +184,7 @@ class ThoughtsManager {
     saveData() {
         try {
             const data = { thoughts: this.thoughts };
-            localStorage.setItem('domus:thoughts', JSON.stringify(data));
+            localStorage.setItem(this.auth.getStorageKey('thoughts'), JSON.stringify(data));
         } catch (e) {
             console.warn('Falha ao salvar pensamentos em localStorage:', e);
         }
@@ -192,7 +192,7 @@ class ThoughtsManager {
 
     loadData() {
         try {
-            const raw = localStorage.getItem('domus:thoughts');
+            const raw = localStorage.getItem(this.auth.getStorageKey('thoughts'));
             if (raw) {
                 const parsed = JSON.parse(raw);
                 if (parsed.thoughts && Array.isArray(parsed.thoughts)) {
