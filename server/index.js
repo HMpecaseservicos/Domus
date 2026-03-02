@@ -295,7 +295,7 @@ app.get('/api/me', authMiddleware, async (req, res) => {
 // Tasks CRUD (isolated by user_id)
 app.get('/api/tasks', authMiddleware, async (req, res) => {
   try {
-    const tasks = await all('SELECT * FROM tasks WHERE user_id = ? ORDER BY created_at DESC', [req.user.id]);
+    const tasks = await all('SELECT * FROM tasks WHERE user_id = ? ORDER BY sort_order ASC, created_at DESC', [req.user.id]);
     res.json({ tasks });
   } catch (err) {
     console.error(err);
@@ -303,10 +303,28 @@ app.get('/api/tasks', authMiddleware, async (req, res) => {
   }
 });
 
-app.post('/api/tasks', authMiddleware, validateTask, handleValidationErrors, async (req, res) => {
-  const { text, priority } = req.body;
+// Batch reorder tasks (must be before :id routes)
+app.patch('/api/tasks/reorder', authMiddleware, async (req, res) => {
+  const { order } = req.body;
+  if (!Array.isArray(order)) return res.status(400).json({ message: 'order must be array' });
   try {
-    const result = await run('INSERT INTO tasks (user_id, text, priority) VALUES (?, ?, ?) RETURNING id', [req.user.id, text, priority || 'low']);
+    for (const item of order) {
+      await run('UPDATE tasks SET sort_order = ? WHERE id = ? AND user_id = ?', [item.sort_order, item.id, req.user.id]);
+    }
+    res.json({ message: 'Reordered' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.post('/api/tasks', authMiddleware, validateTask, handleValidationErrors, async (req, res) => {
+  const { text, priority, category, due_date, notes } = req.body;
+  try {
+    const result = await run(
+      'INSERT INTO tasks (user_id, text, priority, category, due_date, notes) VALUES (?, ?, ?, ?, ?, ?) RETURNING id',
+      [req.user.id, text, priority || 'low', category || '', due_date || null, notes || '']
+    );
     const task = await get('SELECT * FROM tasks WHERE id = ?', [result.lastID]);
     res.json({ task });
   } catch (err) {
@@ -459,11 +477,14 @@ app.delete('/api/finances/:id', authMiddleware, validateId, handleValidationErro
 // PUT endpoints for editing
 app.put('/api/tasks/:id', authMiddleware, validateId, validateTask, handleValidationErrors, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { text, priority } = req.body;
+  const { text, priority, category, due_date, notes, sort_order } = req.body;
   try {
     const task = await get('SELECT * FROM tasks WHERE id = ? AND user_id = ?', [id, req.user.id]);
     if (!task) return res.status(404).json({ message: 'Not found' });
-    await run('UPDATE tasks SET text = ?, priority = ? WHERE id = ?', [text, priority || task.priority, id]);
+    await run(
+      'UPDATE tasks SET text = ?, priority = ?, category = ?, due_date = ?, notes = ?, sort_order = ? WHERE id = ?',
+      [text, priority || task.priority, category ?? task.category, due_date ?? task.due_date, notes ?? task.notes, sort_order ?? task.sort_order, id]
+    );
     const updated = await get('SELECT * FROM tasks WHERE id = ?', [id]);
     res.json({ task: updated });
   } catch (err) {
