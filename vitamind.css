@@ -2943,6 +2943,14 @@ textarea:focus,
     box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
 }
 
+.auth-hint {
+    display: block;
+    margin-top: 6px;
+    font-size: 0.78rem;
+    color: rgba(255, 255, 255, 0.5);
+    line-height: 1.3;
+}
+
 /* Buttons */
 .auth-btn {
     padding: 14px 24px;

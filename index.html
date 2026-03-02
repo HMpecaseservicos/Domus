@@ -66,6 +66,7 @@
                 <div class="auth-form-group">
                     <label for="auth-reg-pass"><i class="fas fa-lock"></i> Senha</label>
                     <input id="auth-reg-pass" type="password" class="auth-input" placeholder="Crie uma senha segura" required />
+                    <small class="auth-hint">Mínimo 6 caracteres, com letra maiúscula, minúscula e número</small>
                 </div>
                 <div class="auth-form-group">
                     <label for="auth-reg-pass2"><i class="fas fa-lock"></i> Confirmar Senha</label>
@@ -573,6 +574,29 @@
             const switchToRegister = document.getElementById('auth-switch-to-register');
             const switchToLogin = document.getElementById('auth-switch-to-login');
 
+            // Helper: show notification even without window.app
+            function _authNotify(msg, type) {
+                if (window.app && window.app.authManager) {
+                    window.app.authManager.showNotification(msg, type);
+                } else {
+                    // Fallback using the notification element directly
+                    const notification = document.getElementById('notification');
+                    if (notification) {
+                        const icons = { success:'fa-check-circle', error:'fa-exclamation-circle', warning:'fa-exclamation-triangle', info:'fa-info-circle' };
+                        const icon = notification.querySelector('i');
+                        const content = notification.querySelector('.notification-content');
+                        notification.classList.remove('success','error','warning','info');
+                        notification.classList.add(type);
+                        if (icon) icon.className = 'fas ' + (icons[type] || 'fa-info-circle');
+                        if (content) content.textContent = msg;
+                        notification.classList.add('show');
+                        setTimeout(() => notification.classList.remove('show'), 5000);
+                    } else {
+                        alert(msg);
+                    }
+                }
+            }
+
             if (switchToRegister) switchToRegister.addEventListener('click', () => {
                 authLoginForm.style.display = 'none';
                 authRegForm.style.display = '';
@@ -598,22 +622,26 @@
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Entrando...';
 
                 try {
-                    // Use the app's authManager if available
+                    const apiBase = window.location.hostname === 'localhost' ? 'http://localhost:4000' : window.location.origin;
+                    const resp = await fetch(apiBase + '/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, password })
+                    });
+                    const data = await resp.json();
+                    if (!resp.ok) {
+                        const msg = (data.errors && data.errors.length) ? data.errors.join('. ') : (data.message || 'Falha no login');
+                        throw new Error(msg);
+                    }
+                    localStorage.setItem('domus:token', data.token);
                     if (window.app && window.app.authManager) {
-                        const resp = await window.app.authManager.apiRequest('/auth/login', {
-                            method: 'POST',
-                            body: JSON.stringify({ username, password })
-                        });
-                        window.app.authManager.setToken(resp.token);
+                        window.app.authManager.setToken(data.token);
                         window.app.authManager._fireLogin();
+                    } else {
+                        window.location.reload();
                     }
                 } catch (err) {
-                    const msg = err.message || 'Falha no login';
-                    if (window.app && window.app.authManager) {
-                        window.app.authManager.showNotification(msg, 'error');
-                    } else {
-                        alert(msg);
-                    }
+                    _authNotify(err.message || 'Falha no login', 'error');
                 } finally {
                     btn.disabled = false;
                     btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Entrar';
@@ -626,13 +654,24 @@
                 const username = document.getElementById('auth-reg-user').value.trim();
                 const password = document.getElementById('auth-reg-pass').value;
                 const password2 = document.getElementById('auth-reg-pass2').value;
-                if (!username || !password) return;
+                if (!username || !password) {
+                    _authNotify('Preencha todos os campos.', 'warning');
+                    return;
+                }
+                if (username.length < 3) {
+                    _authNotify('Usuário deve ter pelo menos 3 caracteres.', 'warning');
+                    return;
+                }
+                if (password.length < 6) {
+                    _authNotify('Senha deve ter pelo menos 6 caracteres.', 'warning');
+                    return;
+                }
+                if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
+                    _authNotify('Senha deve ter letra maiúscula, minúscula e número.', 'warning');
+                    return;
+                }
                 if (password !== password2) {
-                    if (window.app && window.app.authManager) {
-                        window.app.authManager.showNotification('As senhas não coincidem.', 'warning');
-                    } else {
-                        alert('As senhas não coincidem.');
-                    }
+                    _authNotify('As senhas não coincidem.', 'warning');
                     return;
                 }
 
@@ -641,21 +680,28 @@
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Criando...';
 
                 try {
+                    const apiBase = window.location.hostname === 'localhost' ? 'http://localhost:4000' : window.location.origin;
+                    const resp = await fetch(apiBase + '/auth/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, password })
+                    });
+                    const data = await resp.json();
+                    if (!resp.ok) {
+                        const msg = (data.errors && data.errors.length) ? data.errors.join('. ') : (data.message || 'Falha no registro');
+                        throw new Error(msg);
+                    }
+                    // Save token and trigger login
+                    localStorage.setItem('domus:token', data.token);
                     if (window.app && window.app.authManager) {
-                        const resp = await window.app.authManager.apiRequest('/auth/register', {
-                            method: 'POST',
-                            body: JSON.stringify({ username, password })
-                        });
-                        window.app.authManager.setToken(resp.token);
+                        window.app.authManager.setToken(data.token);
                         window.app.authManager._fireLogin();
+                    } else {
+                        // Fallback: reload to pick up token
+                        window.location.reload();
                     }
                 } catch (err) {
-                    const msg = err.message || 'Falha no registro';
-                    if (window.app && window.app.authManager) {
-                        window.app.authManager.showNotification(msg, 'error');
-                    } else {
-                        alert(msg);
-                    }
+                    _authNotify(err.message || 'Falha no registro', 'error');
                 } finally {
                     btn.disabled = false;
                     btn.innerHTML = '<i class="fas fa-user-plus"></i> Criar Conta';
