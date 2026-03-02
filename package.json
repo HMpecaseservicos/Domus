@@ -1,0 +1,13 @@
+{
+  "name": "domus",
+  "version": "1.0.0",
+  "description": "DOMUS - Sistema de controle pessoal completo",
+  "scripts": {
+    "start": "cd server && node index.js",
+    "dev": "cd server && npm run dev",
+    "server": "cd server && npm start"
+  },
+  "keywords": ["personal", "productivity", "mental-health", "finance"],
+  "author": "",
+  "license": "MIT"
+}

@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="description" content="DOMUS - Sistema de controle pessoal completo para organização da vida, mente e finanças">
+    <meta name="theme-color" content="#6C63FF">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="DOMUS">
+    <title>DOMUS - Controle Pessoal</title>
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+
+    <!-- Favicon & Icons -->
+    <link rel="icon" href="icons/icon-192.png" type="image/png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="vitamind.css">
+
+    <!-- Security -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+</head>
+<body>
+    <!-- ========== SIDEBAR ========== -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-logo">
+                <i class="fas fa-cube"></i>
+                <span class="sidebar-brand">DOMUS</span>
+            </div>
+            <button class="sidebar-toggle" id="sidebar-toggle" title="Recolher menu">
+                <i class="fas fa-chevron-left"></i>
+            </button>
+        </div>
+
+        <nav class="sidebar-nav">
+            <ul class="nav-list">
+                <li class="nav-item">
+                    <a href="#" class="nav-link active" data-view="home" title="Visão Geral">
+                        <i class="fas fa-th-large"></i>
+                        <span class="nav-text">Visão Geral</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-view="tasks" title="Tarefas">
+                        <i class="fas fa-check-circle"></i>
+                        <span class="nav-text">Tarefas</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-view="finances" title="Finanças">
+                        <i class="fas fa-wallet"></i>
+                        <span class="nav-text">Finanças</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-view="thoughts" title="Pensamentos">
+                        <i class="fas fa-brain"></i>
+                        <span class="nav-text">Pensamentos</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-view="gratitude" title="Gratidão">
+                        <i class="fas fa-pray"></i>
+                        <span class="nav-text">Gratidão</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-view="purpose" title="Propósito">
+                        <i class="fas fa-bullseye"></i>
+                        <span class="nav-text">Propósito</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-view="patterns" title="Padrões">
+                        <i class="fas fa-chart-bar"></i>
+                        <span class="nav-text">Padrões</span>
+                    </a>
+                </li>
+            </ul>
+
+            <div class="nav-divider"></div>
+
+            <ul class="nav-list nav-list-bottom">
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-view="data" title="Dados">
+                        <i class="fas fa-database"></i>
+                        <span class="nav-text">Dados</span>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="sidebar-user">
+                <div class="user-avatar-sm" id="sidebar-avatar">U</div>
+                <span class="nav-text" id="sidebar-user-name">Usuário</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- ========== MAIN CONTENT ========== -->
+    <main class="main-content" id="main-content">
+        <!-- Topbar -->
+        <header class="topbar" id="topbar">
+            <div class="topbar-left">
+                <button class="topbar-menu-btn" id="mobile-menu-btn" title="Abrir menu">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="topbar-title">
+                    <h2 id="view-title">Visão Geral</h2>
+                    <p class="topbar-subtitle" id="view-subtitle">Bem-vindo ao DOMUS</p>
+                </div>
+            </div>
+            <div class="topbar-right">
+                <button class="topbar-btn" id="theme-toggle" title="Alternar tema">
+                    <i class="fas fa-moon"></i>
+                </button>
+                <div class="topbar-auth">
+                    <button id="login-btn" class="btn btn-sm btn-outline" title="Entrar">
+                        <i class="fas fa-sign-in-alt"></i> <span class="btn-text">Entrar</span>
+                    </button>
+                    <button id="register-btn" class="btn btn-sm btn-primary" title="Registrar">
+                        <i class="fas fa-user-plus"></i> <span class="btn-text">Registrar</span>
+                    </button>
+                    <button id="logout-btn" class="btn btn-sm btn-outline hidden" title="Sair">
+                        <i class="fas fa-sign-out-alt"></i> <span class="btn-text">Sair</span>
+                    </button>
+                </div>
+                <div class="topbar-user" id="header-user-info">
+                    <div class="user-avatar" id="topbar-avatar">U</div>
+                    <span class="topbar-user-name" id="header-user-name">Usuário</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- ===== VIEW: HOME ===== -->
+        <section class="view view-active" id="view-home">
+            <div class="view-content">
+                <!-- Stats overview -->
+                <div class="stats-grid">
+                    <div class="stat-card stat-tasks">
+                        <div class="stat-card-icon"><i class="fas fa-check-circle"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-value" id="tasks-completed">0</span>
+                            <span class="stat-label">Tarefas Concluídas</span>
+                        </div>
+                    </div>
+                    <div class="stat-card stat-finance">
+                        <div class="stat-card-icon"><i class="fas fa-wallet"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-value" id="balance">R$ 0,00</span>
+                            <span class="stat-label">Saldo Atual</span>
+                        </div>
+                    </div>
+                    <div class="stat-card stat-thoughts">
+                        <div class="stat-card-icon"><i class="fas fa-brain"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-value" id="thoughts-count">0</span>
+                            <span class="stat-label">Pensamentos</span>
+                        </div>
+                    </div>
+                    <div class="stat-card stat-gratitude">
+                        <div class="stat-card-icon"><i class="fas fa-heart"></i></div>
+                        <div class="stat-card-info">
+                            <span class="stat-value" id="gratitude-count">0</span>
+                            <span class="stat-label">Itens de Gratidão</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick access cards -->
+                <div class="home-grid">
+                    <div class="home-card" data-navigate="tasks">
+                        <div class="home-card-header">
+                            <div class="home-card-icon tasks-accent"><i class="fas fa-check-circle"></i></div>
+                            <h3>Tarefas Diárias</h3>
+                        </div>
+                        <p class="home-card-desc">Gerencie suas tarefas e acompanhe seu progresso diário.</p>
+                        <div class="home-card-footer">
+                            <span class="home-card-action">Abrir <i class="fas fa-arrow-right"></i></span>
+                        </div>
+                    </div>
+                    <div class="home-card" data-navigate="finances">
+                        <div class="home-card-header">
+                            <div class="home-card-icon finances-accent"><i class="fas fa-wallet"></i></div>
+                            <h3>Controle Financeiro</h3>
+                        </div>
+                        <p class="home-card-desc">Receitas, despesas e visualização completa das suas finanças.</p>
+                        <div class="home-card-footer">
+                            <span class="home-card-action">Abrir <i class="fas fa-arrow-right"></i></span>
+                        </div>
+                    </div>
+                    <div class="home-card" data-navigate="thoughts">
+                        <div class="home-card-header">
+                            <div class="home-card-icon thoughts-accent"><i class="fas fa-brain"></i></div>
+                            <h3>Pensamentos</h3>
+                        </div>
+                        <p class="home-card-desc">Registre seus pensamentos, humor e reflexões diárias.</p>
+                        <div class="home-card-footer">
+                            <span class="home-card-action">Abrir <i class="fas fa-arrow-right"></i></span>
+                        </div>
+                    </div>
+                    <div class="home-card" data-navigate="gratitude">
+                        <div class="home-card-header">
+                            <div class="home-card-icon gratitude-accent"><i class="fas fa-pray"></i></div>
+                            <h3>Vida Espiritual</h3>
+                        </div>
+                        <p class="home-card-desc">Cultive gratidão e espiritualidade no seu dia a dia.</p>
+                        <div class="home-card-footer">
+                            <span class="home-card-action">Abrir <i class="fas fa-arrow-right"></i></span>
+                        </div>
+                    </div>
+                    <div class="home-card" data-navigate="purpose">
+                        <div class="home-card-header">
+                            <div class="home-card-icon purpose-accent"><i class="fas fa-bullseye"></i></div>
+                            <h3>Propósito</h3>
+                        </div>
+                        <p class="home-card-desc">Missão pessoal, metas de longo prazo e valores fundamentais.</p>
+                        <div class="home-card-footer">
+                            <span class="home-card-action">Abrir <i class="fas fa-arrow-right"></i></span>
+                        </div>
+                    </div>
+                    <div class="home-card" data-navigate="patterns">
+                        <div class="home-card-header">
+                            <div class="home-card-icon patterns-accent"><i class="fas fa-chart-bar"></i></div>
+                            <h3>Análise de Padrões</h3>
+                        </div>
+                        <p class="home-card-desc">Insights automáticos baseados nos seus dados e comportamentos.</p>
+                        <div class="home-card-footer">
+                            <span class="home-card-action">Abrir <i class="fas fa-arrow-right"></i></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== VIEW: TASKS ===== -->
+        <section class="view" id="view-tasks">
+            <div class="view-content">
+                <div id="module-tasks"></div>
+            </div>
+        </section>
+
+        <!-- ===== VIEW: FINANCES ===== -->
+        <section class="view" id="view-finances">
+            <div class="view-content">
+                <div id="module-finances"></div>
+            </div>
+        </section>
+
+        <!-- ===== VIEW: THOUGHTS ===== -->
+        <section class="view" id="view-thoughts">
+            <div class="view-content">
+                <div id="module-thoughts"></div>
+            </div>
+        </section>
+
+        <!-- ===== VIEW: GRATITUDE ===== -->
+        <section class="view" id="view-gratitude">
+            <div class="view-content">
+                <div id="module-gratitude"></div>
+            </div>
+        </section>
+
+        <!-- ===== VIEW: PURPOSE ===== -->
+        <section class="view" id="view-purpose">
+            <div class="view-content">
+                <div id="module-purpose"></div>
+            </div>
+        </section>
+
+        <!-- ===== VIEW: PATTERNS ===== -->
+        <section class="view" id="view-patterns">
+            <div class="view-content">
+                <div id="module-patterns"></div>
+            </div>
+        </section>
+
+        <!-- ===== VIEW: DATA MANAGEMENT ===== -->
+        <section class="view" id="view-data">
+            <div class="view-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title"><i class="fas fa-database"></i> Gerenciamento de Dados</h2>
+                    </div>
+                    <p style="margin-bottom: 20px; color: var(--text-secondary);">Exporte seus dados para backup ou importe dados anteriores.</p>
+                    <div class="data-actions">
+                        <button class="btn btn-primary" id="export-btn" title="Exportar dados">
+                            <i class="fas fa-file-export"></i> Exportar Dados
+                        </button>
+                        <button class="btn btn-outline" id="import-btn" title="Importar dados">
+                            <i class="fas fa-file-import"></i> Importar Dados
+                        </button>
+                        <button class="btn btn-danger" id="reset-data-btn" title="Limpar dados">
+                            <i class="fas fa-trash"></i> Limpar Todos os Dados
+                        </button>
+                        <input type="file" id="import-file" class="import-file" accept=".json" aria-label="Arquivo para importação">
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="main-footer">
+            <p>DOMUS v1.0 — Controle total da sua vida, em um só lugar.</p>
+        </footer>
+    </main>
+
+    <!-- Sidebar overlay for mobile -->
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <!-- ========== MODALS ========== -->
+    <div id="modals-container">
+        <!-- Login Modal -->
+        <div class="modal" id="login-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Entrar</h3>
+                    <button class="close-modal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="login-username">Usuário</label>
+                        <input id="login-username" type="text" class="form-control" placeholder="Digite seu usuário" />
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Senha</label>
+                        <input id="login-password" type="password" class="form-control" placeholder="Digite sua senha" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline close-modal">Cancelar</button>
+                    <button class="btn btn-primary" id="login-submit">Entrar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Register Modal -->
+        <div class="modal" id="register-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Criar Conta</h3>
+                    <button class="close-modal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="register-username">Usuário</label>
+                        <input id="register-username" type="text" class="form-control" placeholder="Escolha um nome de usuário" />
+                    </div>
+                    <div class="form-group">
+                        <label for="register-password">Senha</label>
+                        <input id="register-password" type="password" class="form-control" placeholder="Crie uma senha segura" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline close-modal">Cancelar</button>
+                    <button class="btn btn-primary" id="register-submit">Registrar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Transaction Modal -->
+        <div class="modal" id="transaction-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Adicionar Transação</h3>
+                    <button class="close-modal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="transaction-type">Tipo</label>
+                        <select id="transaction-type" class="form-control">
+                            <option value="income">Receita</option>
+                            <option value="expense">Despesa</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="transaction-amount">Valor (R$)</label>
+                        <input type="number" id="transaction-amount" class="form-control" step="0.01" min="0" placeholder="0,00">
+                    </div>
+                    <div class="form-group">
+                        <label for="transaction-category">Categoria</label>
+                        <input type="text" id="transaction-category" class="form-control" placeholder="Ex: Alimentação, Salário...">
+                    </div>
+                    <div class="form-group">
+                        <label for="transaction-description">Descrição</label>
+                        <input type="text" id="transaction-description" class="form-control" placeholder="Descrição da transação">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline" id="cancel-transaction">Cancelar</button>
+                    <button class="btn btn-primary" id="save-transaction">Salvar Transação</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Purpose Modal -->
+        <div class="modal" id="purpose-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Editar Propósito de Vida</h3>
+                    <button class="close-modal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="edit-mission">Missão Pessoal</label>
+                        <textarea id="edit-mission" class="form-control" rows="3"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-goals">Metas de Longo Prazo</label>
+                        <textarea id="edit-goals" class="form-control" rows="4"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-values">Valores Fundamentais</label>
+                        <textarea id="edit-values" class="form-control" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline" id="cancel-purpose">Cancelar</button>
+                    <button class="btn btn-primary" id="save-purpose">Salvar Alterações</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification -->
+    <div class="notification" id="notification">
+        <i class="fas fa-check-circle"></i>
+        <div class="notification-content">Operação realizada com sucesso!</div>
+    </div>
+
+    <!-- ========== BOTTOM NAVIGATION (Mobile) ========== -->
+    <nav class="bottom-nav" id="bottom-nav">
+        <button class="bottom-nav-item active" data-view="home" title="Início">
+            <i class="fas fa-th-large"></i>
+            <span>Início</span>
+        </button>
+        <button class="bottom-nav-item" data-view="tasks" title="Tarefas">
+            <i class="fas fa-check-circle"></i>
+            <span>Tarefas</span>
+        </button>
+        <button class="bottom-nav-item" data-view="finances" title="Finanças">
+            <i class="fas fa-wallet"></i>
+            <span>Finanças</span>
+        </button>
+        <button class="bottom-nav-item" data-view="thoughts" title="Diário">
+            <i class="fas fa-brain"></i>
+            <span>Diário</span>
+        </button>
+        <div class="bottom-nav-more">
+            <button class="bottom-nav-item" id="bottom-nav-more-btn" title="Mais">
+                <i class="fas fa-ellipsis-h"></i>
+                <span>Mais</span>
+            </button>
+            <div class="bottom-nav-more-menu" id="bottom-nav-more-menu">
+                <button class="bottom-nav-more-item" data-view="gratitude">
+                    <i class="fas fa-pray"></i> Espiritual
+                </button>
+                <button class="bottom-nav-more-item" data-view="purpose">
+                    <i class="fas fa-compass"></i> Propósito
+                </button>
+                <button class="bottom-nav-more-item" data-view="patterns">
+                    <i class="fas fa-chart-line"></i> Padrões
+                </button>
+                <button class="bottom-nav-more-item" data-view="data">
+                    <i class="fas fa-database"></i> Dados
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Loading overlay -->
+    <div class="loading-overlay" id="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+        <p>Carregando...</p>
+    </div>
+
+    <!-- Load modules -->
+    <script src="modules/utils.js"></script>
+    <script src="modules/auth.js"></script>
+    <script src="modules/tasks.js"></script>
+    <script src="modules/finances.js"></script>
+    <script src="modules/thoughts.js"></script>
+    <script src="modules/gratitude.js"></script>
+    <script src="modules/purpose.js"></script>
+    <script src="modules/patterns.js"></script>
+    <script src="modules/app.js"></script>
+
+    <script>
+        // Initialize DOMUS
+        document.addEventListener('DOMContentLoaded', () => {
+            if (typeof DOMPurify === 'undefined') {
+                console.warn('DOMPurify not loaded, using fallback sanitization');
+            }
+
+            // Register Service Worker for PWA
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('ServiceWorker registered:', reg.scope))
+                    .catch(err => console.warn('ServiceWorker failed:', err));
+            }
+
+            // Wait for all module classes, then bootstrap
+            const initApp = () => {
+                if (!window.DomusApp || !window.TaskManager || !window.FinanceManager ||
+                    !window.ThoughtsManager || !window.GratitudeManager || !window.PurposeManager || !window.PatternsManager) {
+                    setTimeout(initApp, 50);
+                    return;
+                }
+
+                // Inject module templates into their respective view containers
+                document.getElementById('module-tasks').innerHTML = TaskManager.getTemplate();
+                document.getElementById('module-finances').innerHTML = FinanceManager.getTemplate();
+                document.getElementById('module-thoughts').innerHTML = ThoughtsManager.getTemplate();
+                document.getElementById('module-gratitude').innerHTML = GratitudeManager.getTemplate();
+                document.getElementById('module-purpose').innerHTML = PurposeManager.getTemplate();
+                document.getElementById('module-patterns').innerHTML = PatternsManager.getTemplate();
+
+                // Create app
+                window.app = new DomusApp();
+
+                // Bind all module events (DOM now exists)
+                window.app.bindAllModuleEvents();
+
+                // Initialize (load data, render, apply theme, sync)
+                window.app.init();
+
+                // Setup navigation system
+                setupNavigation();
+
+                console.log('DOMUS initialized successfully');
+            };
+
+            initApp();
+        });
+
+        // ========== NAVIGATION SYSTEM ==========
+        function setupNavigation() {
+            const sidebar = document.getElementById('sidebar');
+            const sidebarToggle = document.getElementById('sidebar-toggle');
+            const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+            const overlay = document.getElementById('sidebar-overlay');
+            const navLinks = document.querySelectorAll('.nav-link[data-view]');
+            const homeCards = document.querySelectorAll('.home-card[data-navigate]');
+            const viewTitle = document.getElementById('view-title');
+            const viewSubtitle = document.getElementById('view-subtitle');
+            const bottomNavItems = document.querySelectorAll('.bottom-nav-item[data-view]');
+            const bottomMoreBtn = document.getElementById('bottom-nav-more-btn');
+            const bottomMoreMenu = document.getElementById('bottom-nav-more-menu');
+            const bottomMoreItems = document.querySelectorAll('.bottom-nav-more-item[data-view]');
+
+            const viewMeta = {
+                home:      { title: 'Visão Geral',           subtitle: 'Resumo completo do seu dia' },
+                tasks:     { title: 'Tarefas Diárias',        subtitle: 'Gerencie suas tarefas e produtividade' },
+                finances:  { title: 'Controle Financeiro',    subtitle: 'Receitas, despesas e análises' },
+                thoughts:  { title: 'Registro de Pensamentos', subtitle: 'Seu diário mental e emocional' },
+                gratitude: { title: 'Vida Espiritual',        subtitle: 'Gratidão e reflexões diárias' },
+                purpose:   { title: 'Propósito de Vida',      subtitle: 'Missão, metas e valores' },
+                patterns:  { title: 'Análise de Padrões',     subtitle: 'Insights comportamentais' },
+                data:      { title: 'Gerenciamento de Dados',  subtitle: 'Backup, importação e limpeza' }
+            };
+
+            // Bottom nav "More" items views
+            const moreViews = ['gratitude', 'purpose', 'patterns', 'data'];
+
+            function navigateTo(viewName) {
+                // Hide all views
+                document.querySelectorAll('.view').forEach(v => {
+                    v.classList.remove('view-active');
+                });
+
+                // Show target view
+                const target = document.getElementById('view-' + viewName);
+                if (target) {
+                    target.classList.add('view-active');
+                }
+
+                // Update sidebar nav active state
+                navLinks.forEach(link => {
+                    link.classList.toggle('active', link.dataset.view === viewName);
+                });
+
+                // Update bottom nav active state
+                bottomNavItems.forEach(item => {
+                    item.classList.toggle('active', item.dataset.view === viewName);
+                });
+
+                // If viewing one of the "more" items, highlight the "More" button
+                if (bottomMoreBtn) {
+                    const isMoreView = moreViews.includes(viewName);
+                    bottomMoreBtn.classList.toggle('active', isMoreView);
+                }
+
+                // Update topbar title
+                const meta = viewMeta[viewName] || viewMeta.home;
+                viewTitle.textContent = meta.title;
+                viewSubtitle.textContent = meta.subtitle;
+
+                // Close mobile sidebar
+                sidebar.classList.remove('sidebar-mobile-open');
+                overlay.classList.remove('active');
+                document.body.classList.remove('sidebar-open');
+
+                // Close more menu
+                if (bottomMoreMenu) bottomMoreMenu.classList.remove('show');
+
+                // Scroll to top
+                document.getElementById('main-content').scrollTop = 0;
+            }
+
+            // Sidebar nav link clicks
+            navLinks.forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    navigateTo(link.dataset.view);
+                });
+            });
+
+            // Home card clicks
+            homeCards.forEach(card => {
+                card.addEventListener('click', () => {
+                    navigateTo(card.dataset.navigate);
+                });
+            });
+
+            // Bottom nav item clicks
+            bottomNavItems.forEach(item => {
+                item.addEventListener('click', () => {
+                    navigateTo(item.dataset.view);
+                });
+            });
+
+            // Bottom nav "More" button
+            if (bottomMoreBtn) {
+                bottomMoreBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    bottomMoreMenu.classList.toggle('show');
+                });
+            }
+
+            // Bottom nav "More" menu items
+            bottomMoreItems.forEach(item => {
+                item.addEventListener('click', () => {
+                    navigateTo(item.dataset.view);
+                });
+            });
+
+            // Close More menu when clicking outside
+            document.addEventListener('click', (e) => {
+                if (bottomMoreMenu && !bottomMoreMenu.contains(e.target) && e.target !== bottomMoreBtn) {
+                    bottomMoreMenu.classList.remove('show');
+                }
+            });
+
+            // Sidebar toggle (desktop collapse)
+            sidebarToggle.addEventListener('click', () => {
+                sidebar.classList.toggle('sidebar-collapsed');
+                document.body.classList.toggle('sidebar-is-collapsed');
+            });
+
+            // Mobile menu
+            mobileMenuBtn.addEventListener('click', () => {
+                sidebar.classList.add('sidebar-mobile-open');
+                overlay.classList.add('active');
+                document.body.classList.add('sidebar-open');
+            });
+
+            // Overlay click closes sidebar
+            overlay.addEventListener('click', () => {
+                sidebar.classList.remove('sidebar-mobile-open');
+                overlay.classList.remove('active');
+                document.body.classList.remove('sidebar-open');
+            });
+
+            // Expose navigateTo globally
+            window.domusNavigateTo = navigateTo;
+        }
+    </script>
+</body>
+</html>
