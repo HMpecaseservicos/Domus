@@ -118,7 +118,10 @@ body {
     line-height: 1.6;
     min-height: 100vh;
     display: flex;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: hidden;
+    width: 100%;
+    max-width: 100vw;
 }
 
 /* ============================================
@@ -346,7 +349,9 @@ body {
     flex-direction: column;
     min-height: 100vh;
     overflow-y: auto;
+    overflow-x: hidden;
     transition: margin-left var(--transition-slow);
+    max-width: 100%;
 }
 
 .sidebar-is-collapsed .main-content {
@@ -502,6 +507,8 @@ body {
     max-width: 1200px;
     margin: 0 auto;
     width: 100%;
+    overflow-x: hidden;
+    box-sizing: border-box;
 }
 
 /* ============================================
@@ -1608,6 +1615,9 @@ body {
     display: flex;
     flex-direction: column;
     gap: 16px;
+    width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
 }
 
 /* ---- Hero Card ---- */
@@ -1617,6 +1627,9 @@ body {
     padding: 24px;
     color: #fff;
     box-shadow: 0 8px 32px rgba(99, 102, 241, 0.25);
+    overflow: hidden;
+    box-sizing: border-box;
+    width: 100%;
 }
 
 .fin-hero-top {
@@ -1639,6 +1652,8 @@ body {
     font-weight: 800;
     margin-top: 4px;
     letter-spacing: -0.5px;
+    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .fin-hero-value.positive { color: #A7F3D0; }
@@ -1718,7 +1733,6 @@ body {
     font-size: 1.05rem;
     font-weight: 700;
     line-height: 1.2;
-    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
@@ -1794,6 +1808,9 @@ body {
     border: 1px solid var(--border-light);
     border-radius: 12px;
     padding: 16px 20px;
+    box-sizing: border-box;
+    width: 100%;
+    overflow: hidden;
 }
 
 .fin-add-top { margin-bottom: 12px; }
@@ -1937,6 +1954,9 @@ body {
     border: 1px solid var(--border-light);
     border-radius: 12px;
     padding: 20px;
+    box-sizing: border-box;
+    width: 100%;
+    overflow: hidden;
 }
 
 .fin-section-title {
@@ -2116,6 +2136,9 @@ body {
     padding: 14px 16px;
     transition: all 0.2s;
     animation: finFadeIn 0.3s ease;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
 }
 
 .fin-tx-card:hover {
@@ -2179,7 +2202,6 @@ body {
 .fin-tx-amount {
     font-size: 0.95rem;
     font-weight: 700;
-    white-space: nowrap;
 }
 
 .fin-tx-amount.positive { color: #10B981; }
@@ -2968,6 +2990,91 @@ textarea:focus {
         opacity: 1;
     }
 
+    .fin-hero-card {
+        padding: 16px;
+    }
+
+    .fin-hero-value {
+        font-size: 1.6rem;
+    }
+
+    .fin-month-label {
+        font-size: 0.8rem;
+        min-width: 100px;
+    }
+
+    .fin-kpi-card {
+        padding: 10px 8px;
+    }
+
+    .fin-kpi-value {
+        font-size: 0.85rem;
+    }
+
+    .fin-kpi-icon {
+        width: 30px;
+        height: 30px;
+        font-size: 0.75rem;
+    }
+
+    .fin-add-card {
+        padding: 12px 14px;
+    }
+
+    .fin-add-btn {
+        width: 100%;
+        height: 40px;
+    }
+
+    .fin-type-btn {
+        font-size: 0.78rem;
+        padding: 7px 8px;
+    }
+
+    .fin-tx-card {
+        padding: 12px;
+        gap: 10px;
+    }
+
+    .fin-tx-icon {
+        width: 34px;
+        height: 34px;
+        font-size: 0.85rem;
+    }
+
+    .fin-tx-title {
+        font-size: 0.82rem;
+    }
+
+    .fin-tx-amount {
+        font-size: 0.85rem;
+    }
+
+    .fin-section-card {
+        padding: 14px;
+    }
+
+    .fin-budget-section {
+        padding: 12px 14px;
+    }
+
+    .fin-filter-chip {
+        padding: 6px 10px;
+        font-size: 0.72rem;
+    }
+
+    .fin-search-input {
+        font-size: 0.8rem;
+    }
+
+    .fin-cat-filter-select {
+        width: 100%;
+    }
+
+    .fin-extra-fields {
+        flex-direction: column;
+    }
+
     /* (task mobile handled in tasks section) */
 
     .mood-selector {
@@ -3008,6 +3115,123 @@ textarea:focus {
 
     .topbar-auth .btn-text {
         display: none;
+    }
+
+    .view-content {
+        padding: 12px;
+        padding-bottom: 20px;
+    }
+
+    /* Finance 480px */
+    .fin-hero-card {
+        padding: 14px;
+        border-radius: 12px;
+    }
+
+    .fin-hero-value {
+        font-size: 1.4rem;
+    }
+
+    .fin-hero-label {
+        font-size: 0.75rem;
+    }
+
+    .fin-kpi-grid {
+        gap: 6px;
+    }
+
+    .fin-kpi-card {
+        padding: 8px 6px;
+        gap: 6px;
+    }
+
+    .fin-kpi-icon {
+        width: 26px;
+        height: 26px;
+        font-size: 0.65rem;
+    }
+
+    .fin-kpi-value {
+        font-size: 0.75rem;
+    }
+
+    .fin-kpi-label {
+        font-size: 0.6rem;
+    }
+
+    .fin-month-nav {
+        padding: 4px 6px;
+        gap: 4px;
+    }
+
+    .fin-month-btn {
+        padding: 2px 6px;
+        font-size: 0.75rem;
+    }
+
+    .fin-month-label {
+        font-size: 0.72rem;
+        min-width: 80px;
+    }
+
+    .fin-tx-icon {
+        width: 30px;
+        height: 30px;
+        font-size: 0.8rem;
+    }
+
+    .fin-tx-card {
+        padding: 10px;
+        gap: 8px;
+    }
+
+    .fin-tx-title {
+        font-size: 0.78rem;
+    }
+
+    .fin-tx-meta {
+        gap: 4px;
+    }
+
+    .fin-tx-cat-badge,
+    .fin-tx-method-badge {
+        font-size: 0.62rem;
+        padding: 1px 5px;
+    }
+
+    .fin-tx-amount {
+        font-size: 0.78rem;
+    }
+
+    .fin-tx-action-btn {
+        width: 26px;
+        height: 26px;
+        font-size: 0.65rem;
+    }
+
+    .fin-add-input {
+        padding: 8px 10px;
+        font-size: 0.8rem;
+    }
+
+    .fin-cat-row {
+        gap: 8px;
+        padding: 6px 0;
+    }
+
+    .fin-cat-icon {
+        width: 26px;
+        font-size: 0.8rem;
+    }
+
+    .fin-cat-name,
+    .fin-cat-amount {
+        font-size: 0.75rem;
+    }
+
+    .fin-edit-input {
+        font-size: 0.78rem;
+        padding: 7px 8px;
     }
 }
 
