@@ -143,8 +143,8 @@ const validateRegistration = [
   body('username')
     .isLength({ min: 3, max: 30 })
     .withMessage('Username deve ter entre 3 e 30 caracteres')
-    .matches(/^[a-zA-Z0-9_]+$/)
-    .withMessage('Username deve conter apenas letras, números e underscore')
+    .matches(/^[a-zA-Z0-9_\-\.]+$/)
+    .withMessage('Username deve conter apenas letras, números, underscore, hífen ou ponto')
     .trim()
     .escape(),
   body('password')
