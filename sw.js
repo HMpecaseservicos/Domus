@@ -3,13 +3,19 @@
  * Offline support and caching
  */
 
-const CACHE_NAME = 'domus-v1';
+const CACHE_VERSION = 'domus-v3';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
-  '/domus.css',
-  '/domus-app.js',
-  '/modules/utils.js',
+  '/vitamind.css',
+  '/modules/app.js',
+  '/modules/auth.js',
+  '/modules/finances.js',
+  '/modules/tasks.js',
+  '/modules/thoughts.js',
+  '/modules/gratitude.js',
+  '/modules/purpose.js',
+  '/modules/patterns.js',
   '/manifest.json'
 ];
 
@@ -23,7 +29,7 @@ self.addEventListener('install', (event) => {
   console.log('[SW] Installing Service Worker');
   
   event.waitUntil(
-    caches.open(CACHE_NAME)
+    caches.open(CACHE_VERSION)
       .then((cache) => {
         console.log('[SW] Caching static assets');
         return cache.addAll([...STATIC_ASSETS, ...EXTERNAL_ASSETS]);
@@ -44,15 +50,18 @@ self.addEventListener('activate', (event) => {
       .then((cacheNames) => {
         return Promise.all(
           cacheNames
-            .filter((name) => name !== CACHE_NAME)
-            .map((name) => caches.delete(name))
+            .filter((name) => name !== CACHE_VERSION)
+            .map((name) => {
+              console.log('[SW] Deleting old cache:', name);
+              return caches.delete(name);
+            })
         );
       })
       .then(() => self.clients.claim())
   );
 });
 
-// Fetch event - serve from cache, fallback to network
+// Fetch event - Network First for app assets, Cache First for external
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
@@ -62,7 +71,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   
-  // API requests - Network first, no cache
+  // API requests - Network only, no cache
   if (url.pathname.startsWith('/api') || url.pathname.startsWith('/auth')) {
     event.respondWith(
       fetch(request)
@@ -78,42 +87,46 @@ self.addEventListener('fetch', (event) => {
     );
     return;
   }
-  
-  // Static assets - Cache first, fallback to network
+
+  // Same-origin assets (HTML, CSS, JS) — Network First
+  if (url.origin === self.location.origin) {
+    event.respondWith(
+      fetch(request)
+        .then((networkResponse) => {
+          if (networkResponse.ok) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_VERSION)
+              .then((cache) => cache.put(request, responseClone));
+          }
+          return networkResponse;
+        })
+        .catch(() => {
+          return caches.match(request)
+            .then((cachedResponse) => {
+              if (cachedResponse) return cachedResponse;
+              if (request.headers.get('accept')?.includes('text/html')) {
+                return caches.match('/index.html');
+              }
+              return new Response('Offline', { status: 503 });
+            });
+        })
+    );
+    return;
+  }
+
+  // External assets (CDN fonts, libraries) — Cache First
   event.respondWith(
     caches.match(request)
       .then((cachedResponse) => {
-        if (cachedResponse) {
-          // Update cache in background
-          fetch(request)
-            .then((networkResponse) => {
-              if (networkResponse.ok) {
-                caches.open(CACHE_NAME)
-                  .then((cache) => cache.put(request, networkResponse));
-              }
-            })
-            .catch(() => {});
-          
-          return cachedResponse;
-        }
-        
-        // Not in cache - fetch from network
+        if (cachedResponse) return cachedResponse;
         return fetch(request)
           .then((networkResponse) => {
-            // Cache successful responses
             if (networkResponse.ok) {
               const responseClone = networkResponse.clone();
-              caches.open(CACHE_NAME)
+              caches.open(CACHE_VERSION)
                 .then((cache) => cache.put(request, responseClone));
             }
             return networkResponse;
-          })
-          .catch(() => {
-            // Offline fallback for HTML pages
-            if (request.headers.get('accept')?.includes('text/html')) {
-              return caches.match('/index.html');
-            }
-            return new Response('Offline', { status: 503 });
           });
       })
   );
