@@ -30,6 +30,70 @@ app.get('/sw.js', (req, res) => {
   res.sendFile(path.join(staticPath, 'sw.js'));
 });
 
+// Nuclear cache clear page — visit /clear to force-remove old Service Workers
+app.get('/clear', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.send(`<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DOMUS — Limpando cache...</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Inter',system-ui,sans-serif; background:#111827; color:#fff;
+           display:flex; align-items:center; justify-content:center; min-height:100vh; padding:20px; }
+    .card { text-align:center; max-width:400px; }
+    h1 { font-size:1.5rem; margin-bottom:12px; }
+    p { color:#9CA3AF; font-size:0.9rem; line-height:1.6; }
+    .spinner { width:48px; height:48px; border:4px solid #374151; border-top-color:#6C63FF;
+               border-radius:50%; animation:spin .8s linear infinite; margin:0 auto 24px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .done { color:#10B981; font-weight:700; font-size:1.1rem; }
+    .error { color:#EF4444; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="spinner" id="spinner"></div>
+    <h1>Limpando cache do DOMUS...</h1>
+    <p id="status">Removendo Service Workers antigos...</p>
+  </div>
+  <script>
+    async function clearAll() {
+      const status = document.getElementById('status');
+      const spinner = document.getElementById('spinner');
+      try {
+        // 1. Unregister ALL service workers
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (const reg of regs) {
+            await reg.unregister();
+          }
+          status.textContent = 'Service Workers removidos (' + regs.length + '). Limpando caches...';
+        }
+        // 2. Delete ALL caches
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (const key of keys) {
+            await caches.delete(key);
+          }
+          status.textContent = 'Caches limpos (' + keys.length + '). Redirecionando...';
+        }
+        // 3. Wait a moment then redirect
+        spinner.style.borderTopColor = '#10B981';
+        status.innerHTML = '<span class="done">✓ Tudo limpo! Redirecionando...</span>';
+        setTimeout(() => { window.location.href = '/?cache_bust=' + Date.now(); }, 1500);
+      } catch(err) {
+        status.innerHTML = '<span class="error">Erro: ' + err.message + '</span><br><br>Tente abrir em aba anônima.';
+      }
+    }
+    clearAll();
+  </script>
+</body>
+</html>`);
+});
+
 app.use(express.static(staticPath, {
   maxAge: isProduction ? '5m' : 0,
   etag: true
