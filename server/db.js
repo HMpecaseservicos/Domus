@@ -142,8 +142,17 @@ async function init() {
         amount DECIMAL(12,2) NOT NULL,
         category VARCHAR(100),
         description TEXT,
+        payment_method VARCHAR(30) DEFAULT '',
         date TIMESTAMPTZ DEFAULT NOW()
       );
+    `);
+
+    // Safe migration: add payment_method if missing
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE finances ADD COLUMN IF NOT EXISTS payment_method VARCHAR(30) DEFAULT '';
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
     `);
 
     // gratitude

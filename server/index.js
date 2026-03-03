@@ -227,6 +227,14 @@ const validateFinance = [
     .withMessage('Descrição deve ter no máximo 500 caracteres')
     .trim()
     .escape(),
+  body('payment_method')
+    .optional()
+    .isIn(['', 'pix', 'cartao', 'dinheiro', 'transferencia'])
+    .withMessage('Método de pagamento inválido'),
+  body('date')
+    .optional()
+    .isISO8601()
+    .withMessage('Data inválida'),
 ];
 
 // Validation result handler
@@ -414,7 +422,15 @@ app.post('/api/gratitude', authMiddleware, validateGratitude, handleValidationEr
 
 app.get('/api/finances', authMiddleware, async (req, res) => {
   try {
-    const rows = await all('SELECT * FROM finances WHERE user_id = ? ORDER BY date DESC LIMIT 200', [req.user.id]);
+    const { month, year } = req.query;
+    let sql = 'SELECT * FROM finances WHERE user_id = ?';
+    const params = [req.user.id];
+    if (month && year) {
+      sql += " AND EXTRACT(MONTH FROM date) = ? AND EXTRACT(YEAR FROM date) = ?";
+      params.push(parseInt(month), parseInt(year));
+    }
+    sql += ' ORDER BY date DESC LIMIT 500';
+    const rows = await all(sql, params);
     res.json({ finances: rows });
   } catch (err) {
     console.error(err);
@@ -423,9 +439,13 @@ app.get('/api/finances', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/finances', authMiddleware, validateFinance, handleValidationErrors, async (req, res) => {
-  const { type, amount, category, description } = req.body;
+  const { type, amount, category, description, payment_method, date } = req.body;
   try {
-    const result = await run('INSERT INTO finances (user_id, type, amount, category, description) VALUES (?, ?, ?, ?, ?) RETURNING id', [req.user.id, type, amount, category || '', description || '']);
+    const dateVal = date || new Date().toISOString();
+    const result = await run(
+      'INSERT INTO finances (user_id, type, amount, category, description, payment_method, date) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id',
+      [req.user.id, type, amount, category || '', description || '', payment_method || '', dateVal]
+    );
     const item = await get('SELECT * FROM finances WHERE id = ?', [result.lastID]);
     res.json({ item });
   } catch (err) {
@@ -495,12 +515,14 @@ app.put('/api/tasks/:id', authMiddleware, validateId, validateTask, handleValida
 
 app.put('/api/finances/:id', authMiddleware, validateId, validateFinance, handleValidationErrors, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { type, amount, category, description } = req.body;
+  const { type, amount, category, description, payment_method, date } = req.body;
   try {
     const item = await get('SELECT * FROM finances WHERE id = ? AND user_id = ?', [id, req.user.id]);
     if (!item) return res.status(404).json({ message: 'Not found' });
-    await run('UPDATE finances SET type = ?, amount = ?, category = ?, description = ? WHERE id = ?', 
-      [type, amount, category || '', description || '', id]);
+    await run(
+      'UPDATE finances SET type = ?, amount = ?, category = ?, description = ?, payment_method = ?, date = ? WHERE id = ?',
+      [type, amount, category || '', description || '', payment_method ?? item.payment_method ?? '', date || item.date, id]
+    );
     const updated = await get('SELECT * FROM finances WHERE id = ?', [id]);
     res.json({ item: updated });
   } catch (err) {
