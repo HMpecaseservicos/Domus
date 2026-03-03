@@ -3,7 +3,7 @@
  * Offline support and caching
  */
 
-const CACHE_VERSION = 'domus-v5';
+const CACHE_VERSION = 'domus-v6';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -156,6 +156,14 @@ self.addEventListener('push', (event) => {
       data: data.url || '/'
     })
   );
+});
+
+// Listen for SKIP_WAITING message from the page
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    console.log('[SW] Received SKIP_WAITING, activating immediately');
+    self.skipWaiting();
+  }
 });
 
 // Notification click handler

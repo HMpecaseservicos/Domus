@@ -552,11 +552,41 @@
                 console.warn('DOMPurify not loaded, using fallback sanitization');
             }
 
-            // Register Service Worker for PWA
+            // Register Service Worker for PWA — force bypass HTTP cache
             if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.register('/sw.js')
-                    .then(reg => console.log('ServiceWorker registered:', reg.scope))
+                // First: unregister any old/stale service workers and clear old caches
+                navigator.serviceWorker.getRegistrations().then(registrations => {
+                    registrations.forEach(reg => {
+                        reg.update(); // Force browser to check for new version
+                    });
+                });
+
+                navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+                    .then(reg => {
+                        console.log('ServiceWorker registered:', reg.scope);
+                        // If a new SW is waiting, force it to activate immediately
+                        if (reg.waiting) {
+                            reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+                        }
+                        reg.addEventListener('updatefound', () => {
+                            const newWorker = reg.installing;
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    newWorker.postMessage({ type: 'SKIP_WAITING' });
+                                }
+                            });
+                        });
+                    })
                     .catch(err => console.warn('ServiceWorker failed:', err));
+
+                // Reload page once the new SW takes control
+                let refreshing = false;
+                navigator.serviceWorker.addEventListener('controllerchange', () => {
+                    if (!refreshing) {
+                        refreshing = true;
+                        window.location.reload();
+                    }
+                });
             }
 
             // ===== AUTH SCREEN LOGIC =====
