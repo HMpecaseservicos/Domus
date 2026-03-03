@@ -3,11 +3,12 @@
  * Offline support and caching
  */
 
-const CACHE_VERSION = 'domus-v3';
+const CACHE_VERSION = 'domus-v5';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/vitamind.css',
+  '/modules/utils.js',
   '/modules/app.js',
   '/modules/auth.js',
   '/modules/finances.js',

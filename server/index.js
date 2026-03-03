@@ -21,8 +21,17 @@ app.use(express.json({ limit: '1mb' }));
 
 // Serve static frontend files (from project root)
 const staticPath = path.join(__dirname, '..');
+
+// Service Worker MUST NOT be cached by HTTP cache
+app.get('/sw.js', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.sendFile(path.join(staticPath, 'sw.js'));
+});
+
 app.use(express.static(staticPath, {
-  maxAge: isProduction ? '1d' : 0,
+  maxAge: isProduction ? '5m' : 0,
   etag: true
 }));
 
