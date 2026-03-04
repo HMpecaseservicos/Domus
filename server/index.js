@@ -706,9 +706,14 @@ app.put('/api/tasks/:id', authMiddleware, validateId, validateTask, handleValida
           [id, sub.text || sub, !!sub.done || !!sub.completed, i]);
       }
     }
+    // Award gamification points if task just completed
+    let gamification = null;
+    if (newStatus === 'done' && task.status !== 'done') {
+      gamification = await awardTaskCompletion(req.user.id, priority || task.priority);
+    }
     const updated = await get('SELECT * FROM tasks WHERE id = ?', [id]);
     updated.subtask_items = await all('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY sort_order ASC', [id]);
-    res.json({ task: updated });
+    res.json({ task: updated, gamification });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Internal error' });
@@ -1232,6 +1237,279 @@ app.get('/health', (req, res) => {
     environment: process.env.NODE_ENV || 'development',
     version: '1.0.0'
   });
+});
+
+// ===== TIME TRACKING =====
+app.get('/api/tasks/:id/time-logs', authMiddleware, validateId, handleValidationErrors, async (req, res) => {
+  const taskId = parseInt(req.params.id, 10);
+  try {
+    const task = await get('SELECT * FROM tasks WHERE id = ? AND user_id = ?', [taskId, req.user.id]);
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+    const logs = await all('SELECT * FROM task_time_logs WHERE task_id = ? ORDER BY started_at DESC', [taskId]);
+    res.json({ logs });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.post('/api/tasks/:id/timer/start', authMiddleware, validateId, handleValidationErrors, async (req, res) => {
+  const taskId = parseInt(req.params.id, 10);
+  try {
+    const task = await get('SELECT * FROM tasks WHERE id = ? AND user_id = ?', [taskId, req.user.id]);
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+    // Check for active timer
+    const active = await get('SELECT * FROM task_time_logs WHERE task_id = ? AND ended_at IS NULL', [taskId]);
+    if (active) return res.status(400).json({ message: 'Timer already running', log: active });
+    const result = await run('INSERT INTO task_time_logs (task_id, started_at) VALUES (?, NOW()) RETURNING id', [taskId]);
+    const log = await get('SELECT * FROM task_time_logs WHERE id = ?', [result.lastID]);
+    res.json({ log });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.post('/api/tasks/:id/timer/stop', authMiddleware, validateId, handleValidationErrors, async (req, res) => {
+  const taskId = parseInt(req.params.id, 10);
+  try {
+    const task = await get('SELECT * FROM tasks WHERE id = ? AND user_id = ?', [taskId, req.user.id]);
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+    const active = await get('SELECT * FROM task_time_logs WHERE task_id = ? AND ended_at IS NULL', [taskId]);
+    if (!active) return res.status(400).json({ message: 'No active timer' });
+    await run('UPDATE task_time_logs SET ended_at = NOW(), duration_seconds = EXTRACT(EPOCH FROM (NOW() - started_at))::INTEGER WHERE id = ?', [active.id]);
+    const log = await get('SELECT * FROM task_time_logs WHERE id = ?', [active.id]);
+    res.json({ log });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.delete('/api/time-logs/:id', authMiddleware, validateId, handleValidationErrors, async (req, res) => {
+  const logId = parseInt(req.params.id, 10);
+  try {
+    const log = await get('SELECT tl.*, t.user_id FROM task_time_logs tl JOIN tasks t ON tl.task_id = t.id WHERE tl.id = ?', [logId]);
+    if (!log || log.user_id !== req.user.id) return res.status(404).json({ message: 'Not found' });
+    await run('DELETE FROM task_time_logs WHERE id = ?', [logId]);
+    res.json({ message: 'Deleted' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// ===== TASK DEPENDENCIES =====
+app.get('/api/tasks/:id/dependencies', authMiddleware, validateId, handleValidationErrors, async (req, res) => {
+  const taskId = parseInt(req.params.id, 10);
+  try {
+    const task = await get('SELECT * FROM tasks WHERE id = ? AND user_id = ?', [taskId, req.user.id]);
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+    const dependsOn = await all(`
+      SELECT t.id, t.text, t.status, t.completed FROM task_dependencies td
+      JOIN tasks t ON td.depends_on_id = t.id
+      WHERE td.task_id = ?`, [taskId]);
+    const blockedBy = await all(`
+      SELECT t.id, t.text, t.status, t.completed FROM task_dependencies td
+      JOIN tasks t ON td.task_id = t.id
+      WHERE td.depends_on_id = ?`, [taskId]);
+    res.json({ dependsOn, blockedBy });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.post('/api/tasks/:id/dependencies', authMiddleware, validateId, handleValidationErrors, async (req, res) => {
+  const taskId = parseInt(req.params.id, 10);
+  const { depends_on_id } = req.body;
+  try {
+    const task = await get('SELECT * FROM tasks WHERE id = ? AND user_id = ?', [taskId, req.user.id]);
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+    const depTask = await get('SELECT * FROM tasks WHERE id = ? AND user_id = ?', [depends_on_id, req.user.id]);
+    if (!depTask) return res.status(404).json({ message: 'Dependency task not found' });
+    if (taskId === depends_on_id) return res.status(400).json({ message: 'Cannot depend on self' });
+    await run('INSERT INTO task_dependencies (task_id, depends_on_id) VALUES (?, ?) ON CONFLICT DO NOTHING', [taskId, depends_on_id]);
+    res.json({ message: 'Dependency added' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.delete('/api/tasks/:id/dependencies/:depId', authMiddleware, async (req, res) => {
+  const taskId = parseInt(req.params.id, 10);
+  const depId = parseInt(req.params.depId, 10);
+  try {
+    const task = await get('SELECT * FROM tasks WHERE id = ? AND user_id = ?', [taskId, req.user.id]);
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+    await run('DELETE FROM task_dependencies WHERE task_id = ? AND depends_on_id = ?', [taskId, depId]);
+    res.json({ message: 'Dependency removed' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// ===== GAMIFICATION =====
+const BADGES = {
+  first_task: { name: 'Primeira Tarefa', icon: 'fa-star', description: 'Completou a primeira tarefa' },
+  productive_10: { name: 'Produtivo', icon: 'fa-fire', description: 'Completou 10 tarefas' },
+  productive_50: { name: 'Super Produtivo', icon: 'fa-bolt', description: 'Completou 50 tarefas' },
+  productive_100: { name: 'Máquina', icon: 'fa-rocket', description: 'Completou 100 tarefas' },
+  streak_3: { name: 'Consistente', icon: 'fa-calendar-check', description: '3 dias seguidos de produtividade' },
+  streak_7: { name: 'Semana Perfeita', icon: 'fa-crown', description: '7 dias seguidos de produtividade' },
+  streak_30: { name: 'Mês Imbatível', icon: 'fa-trophy', description: '30 dias seguidos de produtividade' },
+  time_tracker: { name: 'Cronometrista', icon: 'fa-stopwatch', description: 'Usou time tracking em 10 tarefas' },
+  early_bird: { name: 'Madrugador', icon: 'fa-sun', description: 'Completou tarefa antes das 7h' },
+  night_owl: { name: 'Coruja', icon: 'fa-moon', description: 'Completou tarefa após 23h' }
+};
+
+app.get('/api/gamification', authMiddleware, async (req, res) => {
+  try {
+    const user = await get('SELECT points, streak, level, total_tasks_completed, streak_updated_at FROM users WHERE id = ?', [req.user.id]);
+    const badges = await all('SELECT badge_key, earned_at FROM user_badges WHERE user_id = ? ORDER BY earned_at DESC', [req.user.id]);
+    const badgesWithMeta = badges.map(b => ({ ...b, ...BADGES[b.badge_key] }));
+    const nextLevel = (user.level || 1) * 100;
+    const progress = Math.min(100, Math.round(((user.points || 0) % 100) / 100 * 100));
+    res.json({
+      points: user.points || 0,
+      streak: user.streak || 0,
+      level: user.level || 1,
+      totalCompleted: user.total_tasks_completed || 0,
+      nextLevelPoints: nextLevel,
+      levelProgress: progress,
+      badges: badgesWithMeta,
+      availableBadges: Object.entries(BADGES).map(([key, val]) => ({ key, ...val }))
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// Internal function to award points and check badges
+async function awardTaskCompletion(userId, taskPriority) {
+  const pointsMap = { high: 15, medium: 10, low: 5 };
+  const points = pointsMap[taskPriority] || 5;
+  
+  // Update user stats
+  const user = await get('SELECT points, streak, level, total_tasks_completed, streak_updated_at FROM users WHERE id = ?', [userId]);
+  const today = new Date().toISOString().split('T')[0];
+  const lastUpdate = user.streak_updated_at ? new Date(user.streak_updated_at).toISOString().split('T')[0] : null;
+  
+  let newStreak = user.streak || 0;
+  if (lastUpdate !== today) {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    newStreak = (lastUpdate === yesterdayStr) ? newStreak + 1 : 1;
+  }
+  
+  const newPoints = (user.points || 0) + points;
+  const newTotal = (user.total_tasks_completed || 0) + 1;
+  const newLevel = Math.floor(newPoints / 100) + 1;
+  
+  await run('UPDATE users SET points = ?, streak = ?, level = ?, total_tasks_completed = ?, streak_updated_at = ? WHERE id = ?',
+    [newPoints, newStreak, newLevel, newTotal, today, userId]);
+  
+  // Check badges
+  const earnedBadges = [];
+  const checkBadge = async (key, condition) => {
+    if (condition) {
+      const exists = await get('SELECT * FROM user_badges WHERE user_id = ? AND badge_key = ?', [userId, key]);
+      if (!exists) {
+        await run('INSERT INTO user_badges (user_id, badge_key) VALUES (?, ?)', [userId, key]);
+        earnedBadges.push({ key, ...BADGES[key] });
+      }
+    }
+  };
+  
+  await checkBadge('first_task', newTotal >= 1);
+  await checkBadge('productive_10', newTotal >= 10);
+  await checkBadge('productive_50', newTotal >= 50);
+  await checkBadge('productive_100', newTotal >= 100);
+  await checkBadge('streak_3', newStreak >= 3);
+  await checkBadge('streak_7', newStreak >= 7);
+  await checkBadge('streak_30', newStreak >= 30);
+  
+  const hour = new Date().getHours();
+  await checkBadge('early_bird', hour < 7);
+  await checkBadge('night_owl', hour >= 23);
+  
+  return { points: newPoints, streak: newStreak, level: newLevel, earnedBadges };
+}
+
+// ===== AI INSIGHTS FOR TASKS =====
+app.get('/api/tasks/ai-insights', authMiddleware, async (req, res) => {
+  try {
+    // Get task statistics for insights
+    const stats = await get(`
+      SELECT 
+        COUNT(*) as total,
+        COUNT(*) FILTER (WHERE status = 'done' OR completed = true) as completed,
+        COUNT(*) FILTER (WHERE status = 'in_progress') as in_progress,
+        COUNT(*) FILTER (WHERE due_date < CURRENT_DATE AND status != 'done' AND completed = false) as overdue,
+        AVG(estimated_minutes) FILTER (WHERE estimated_minutes > 0) as avg_estimate,
+        COUNT(DISTINCT category) FILTER (WHERE category != '') as categories_used
+      FROM tasks WHERE user_id = ?`, [req.user.id]);
+    
+    // Get time tracking stats
+    const timeStats = await get(`
+      SELECT 
+        COUNT(DISTINCT task_id) as tracked_tasks,
+        SUM(duration_seconds) as total_seconds,
+        AVG(duration_seconds) as avg_session
+      FROM task_time_logs tl
+      JOIN tasks t ON tl.task_id = t.id
+      WHERE t.user_id = ? AND tl.ended_at IS NOT NULL`, [req.user.id]);
+    
+    // Get productivity by day of week
+    const byDayOfWeek = await all(`
+      SELECT EXTRACT(DOW FROM completed_at) as dow, COUNT(*) as count
+      FROM tasks WHERE user_id = ? AND completed_at IS NOT NULL
+      GROUP BY dow ORDER BY dow`, [req.user.id]);
+    
+    // Get most productive category
+    const topCategory = await get(`
+      SELECT category, COUNT(*) as count
+      FROM tasks WHERE user_id = ? AND category != '' AND (status = 'done' OR completed = true)
+      GROUP BY category ORDER BY count DESC LIMIT 1`, [req.user.id]);
+    
+    // Generate insights
+    const insights = [];
+    const completionRate = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+    
+    if (completionRate >= 80) {
+      insights.push({ type: 'success', icon: 'fa-trophy', title: 'Alta Performance', text: `Taxa de conclusão de ${completionRate}%. Excelente trabalho!` });
+    } else if (completionRate < 50 && stats.total > 5) {
+      insights.push({ type: 'warning', icon: 'fa-exclamation-triangle', title: 'Atenção', text: `Apenas ${completionRate}% das tarefas concluídas. Foque nas prioridades.` });
+    }
+    
+    if (stats.overdue > 0) {
+      insights.push({ type: 'danger', icon: 'fa-clock', title: 'Tarefas Atrasadas', text: `Você tem ${stats.overdue} tarefa(s) atrasada(s). Considere reagendar ou priorizar.` });
+    }
+    
+    if (timeStats.tracked_tasks > 0) {
+      const avgMin = Math.round((timeStats.avg_session || 0) / 60);
+      insights.push({ type: 'info', icon: 'fa-stopwatch', title: 'Time Tracking', text: `Sessão média de ${avgMin} minutos. Continue monitorando seu tempo!` });
+    }
+    
+    if (topCategory?.category) {
+      insights.push({ type: 'info', icon: 'fa-folder', title: 'Foco Principal', text: `Sua categoria mais produtiva é "${topCategory.category}" com ${topCategory.count} tarefas concluídas.` });
+    }
+    
+    const dayNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+    if (byDayOfWeek.length > 0) {
+      const bestDay = byDayOfWeek.reduce((a, b) => parseInt(a.count) > parseInt(b.count) ? a : b);
+      insights.push({ type: 'info', icon: 'fa-calendar-day', title: 'Melhor Dia', text: `Você é mais produtivo às ${dayNames[bestDay.dow]}s.` });
+    }
+    
+    res.json({ insights, stats: { ...stats, timeTracking: timeStats } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
 });
 
 // SPA fallback - serve index.html for non-API routes

@@ -452,6 +452,77 @@ async function init() {
       END $$;
     `);
 
+    // ===== TIME TRACKING: task_time_logs =====
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS task_time_logs (
+        id SERIAL PRIMARY KEY,
+        task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        started_at TIMESTAMPTZ NOT NULL,
+        ended_at TIMESTAMPTZ,
+        duration_seconds INTEGER DEFAULT 0,
+        notes TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_time_logs_task_id ON task_time_logs(task_id);');
+
+    // ===== TASK DEPENDENCIES =====
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS task_dependencies (
+        id SERIAL PRIMARY KEY,
+        task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        depends_on_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(task_id, depends_on_id)
+      );
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_task_deps_task_id ON task_dependencies(task_id);');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_task_deps_depends_on ON task_dependencies(depends_on_id);');
+
+    // ===== GAMIFICATION: user stats =====
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS points INTEGER DEFAULT 0;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS streak INTEGER DEFAULT 0;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 1;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_updated_at DATE;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS total_tasks_completed INTEGER DEFAULT 0;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+
+    // ===== GAMIFICATION: user_badges =====
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_badges (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        badge_key VARCHAR(50) NOT NULL,
+        earned_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(user_id, badge_key)
+      );
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_user_badges_user_id ON user_badges(user_id);');
+
     await client.query('COMMIT');
     console.log('PostgreSQL database initialized with tables and indexes');
   } catch (err) {
