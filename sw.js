@@ -3,7 +3,7 @@
  * Offline support and caching
  */
 
-const CACHE_VERSION = 'domus-v6';
+const CACHE_VERSION = 'domus-v7';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

@@ -248,6 +248,18 @@ const validateTask = [
     .optional()
     .isIn(['low', 'medium', 'high'])
     .withMessage('Prioridade deve ser low, medium ou high'),
+  body('status')
+    .optional()
+    .isIn(['todo', 'in_progress', 'done'])
+    .withMessage('Status deve ser todo, in_progress ou done'),
+  body('recurrence')
+    .optional()
+    .isIn(['', 'daily', 'weekly', 'monthly'])
+    .withMessage('Recorrência inválida'),
+  body('estimated_minutes')
+    .optional()
+    .isInt({ min: 0, max: 9999 })
+    .toInt(),
 ];
 
 const validateThought = [
@@ -400,11 +412,13 @@ app.patch('/api/tasks/reorder', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/tasks', authMiddleware, validateTask, handleValidationErrors, async (req, res) => {
-  const { text, priority, category, due_date, notes } = req.body;
+  const { text, priority, category, due_date, notes, status, subtasks, tags, estimated_minutes, recurrence } = req.body;
   try {
+    const subtasksJson = JSON.stringify(Array.isArray(subtasks) ? subtasks : []);
+    const tagsStr = Array.isArray(tags) ? tags.join(',') : (tags || '');
     const result = await run(
-      'INSERT INTO tasks (user_id, text, priority, category, due_date, notes) VALUES (?, ?, ?, ?, ?, ?) RETURNING id',
-      [req.user.id, text, priority || 'low', category || '', due_date || null, notes || '']
+      'INSERT INTO tasks (user_id, text, priority, category, due_date, notes, status, subtasks, tags, estimated_minutes, recurrence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
+      [req.user.id, text, priority || 'low', category || '', due_date || null, notes || '', status || 'todo', subtasksJson, tagsStr, estimated_minutes || 0, recurrence || '']
     );
     const task = await get('SELECT * FROM tasks WHERE id = ?', [result.lastID]);
     res.json({ task });
@@ -425,7 +439,9 @@ app.patch('/api/tasks/:id/toggle', authMiddleware, validateId, handleValidationE
     const task = await get('SELECT * FROM tasks WHERE id = ? AND user_id = ?', [id, req.user.id]);
     if (!task) return res.status(404).json({ message: 'Not found' });
     const completed = task.completed ? 0 : 1;
-    await run('UPDATE tasks SET completed = ? WHERE id = ?', [completed, id]);
+    const status = completed ? 'done' : 'todo';
+    const completedAt = completed ? new Date().toISOString() : null;
+    await run('UPDATE tasks SET completed = ?, status = ?, completed_at = ? WHERE id = ?', [completed, status, completedAt, id]);
     const updated = await get('SELECT * FROM tasks WHERE id = ?', [id]);
     res.json({ task: updated });
   } catch (err) {
@@ -570,13 +586,19 @@ app.delete('/api/finances/:id', authMiddleware, validateId, handleValidationErro
 // PUT endpoints for editing
 app.put('/api/tasks/:id', authMiddleware, validateId, validateTask, handleValidationErrors, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { text, priority, category, due_date, notes, sort_order } = req.body;
+  const { text, priority, category, due_date, notes, sort_order, status, subtasks, tags, estimated_minutes, recurrence } = req.body;
   try {
     const task = await get('SELECT * FROM tasks WHERE id = ? AND user_id = ?', [id, req.user.id]);
     if (!task) return res.status(404).json({ message: 'Not found' });
+    const subtasksJson = subtasks !== undefined ? JSON.stringify(Array.isArray(subtasks) ? subtasks : []) : (task.subtasks || '[]');
+    const tagsStr = tags !== undefined ? (Array.isArray(tags) ? tags.join(',') : (tags || '')) : (task.tags || '');
+    // If transitioning to done, set completed_at
+    const newStatus = status || task.status || 'todo';
+    const newCompleted = newStatus === 'done' ? 1 : 0;
+    const completedAt = newStatus === 'done' && task.status !== 'done' ? new Date().toISOString() : (newStatus !== 'done' ? null : task.completed_at);
     await run(
-      'UPDATE tasks SET text = ?, priority = ?, category = ?, due_date = ?, notes = ?, sort_order = ? WHERE id = ?',
-      [text, priority || task.priority, category ?? task.category, due_date ?? task.due_date, notes ?? task.notes, sort_order ?? task.sort_order, id]
+      'UPDATE tasks SET text = ?, priority = ?, category = ?, due_date = ?, notes = ?, sort_order = ?, status = ?, completed = ?, subtasks = ?, tags = ?, estimated_minutes = ?, recurrence = ?, completed_at = ? WHERE id = ?',
+      [text, priority || task.priority, category ?? task.category, due_date ?? task.due_date, notes ?? task.notes, sort_order ?? task.sort_order, newStatus, newCompleted, subtasksJson, tagsStr, estimated_minutes ?? task.estimated_minutes ?? 0, recurrence ?? task.recurrence ?? '', completedAt, id]
     );
     const updated = await get('SELECT * FROM tasks WHERE id = ?', [id]);
     res.json({ task: updated });
