@@ -22,9 +22,13 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
-    <!-- CSS -->
+    <!-- CSS Modular -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="vitamind.css">
+    <link rel="stylesheet" href="css/layout.css">
+    <link rel="stylesheet" href="css/auth.css">
+    <link rel="stylesheet" href="css/tasks.css">
+    <link rel="stylesheet" href="css/finance.css">
+    <link rel="stylesheet" href="css/patterns.css">
 
     <!-- Security -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
@@ -533,16 +537,9 @@
         <p>Carregando...</p>
     </div>
 
-    <!-- Load modules -->
+    <!-- Load core modules (auth + app controller) -->
     <script src="modules/utils.js"></script>
     <script src="modules/auth.js"></script>
-    <script src="modules/tasks.js"></script>
-    <script src="modules/finances.js"></script>
-    <script src="modules/thoughts.js"></script>
-    <script src="modules/gratitude.js"></script>
-    <script src="modules/purpose.js"></script>
-    <script src="modules/patterns.js"></script>
-    <script src="modules/habits.js"></script>
     <script src="modules/app.js"></script>
 
     <script>
@@ -746,36 +743,23 @@
                 }
             });
 
-            // Wait for all module classes, then bootstrap
+            // Wait for core classes, then bootstrap (modules lazy-loaded later)
             const initApp = () => {
-                if (!window.DomusApp || !window.TaskManager || !window.FinanceManager ||
-                    !window.ThoughtsManager || !window.GratitudeManager || !window.PurposeManager || !window.PatternsManager || !window.HabitManager) {
+                if (!window.DomusApp) {
                     setTimeout(initApp, 50);
                     return;
                 }
 
-                // Inject module templates into their respective view containers
-                document.getElementById('module-tasks').innerHTML = TaskManager.getTemplate();
-                document.getElementById('module-finances').innerHTML = FinanceManager.getTemplate();
-                document.getElementById('module-thoughts').innerHTML = ThoughtsManager.getTemplate();
-                document.getElementById('module-gratitude').innerHTML = GratitudeManager.getTemplate();
-                document.getElementById('module-purpose').innerHTML = PurposeManager.getTemplate();
-                document.getElementById('module-patterns').innerHTML = PatternsManager.getTemplate();
-                document.getElementById('module-habits').innerHTML = HabitManager.getTemplate();
-
-                // Create app
+                // Create app (no modules loaded yet — they load on demand)
                 window.app = new DomusApp();
 
-                // Bind all module events (DOM now exists)
-                window.app.bindAllModuleEvents();
-
-                // Initialize (load data, render, apply theme, sync)
+                // Initialize (check auth, lazy-load modules on demand)
                 window.app.init();
 
-                // Setup navigation system
+                // Setup navigation system with lazy loading
                 setupNavigation();
 
-                console.log('DOMUS initialized successfully');
+                console.log('DOMUS initialized (lazy loading mode)');
             };
 
             initApp();
@@ -821,6 +805,11 @@
                 const target = document.getElementById('view-' + viewName);
                 if (target) {
                     target.classList.add('view-active');
+                }
+
+                // Lazy-load module for this view
+                if (window.app && window.app._modules && window.app._modules[viewName]) {
+                    window.app.loadModule(viewName);
                 }
 
                 // Update sidebar nav active state

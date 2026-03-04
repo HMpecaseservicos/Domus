@@ -18,7 +18,8 @@ WORKDIR /app
 COPY server/ ./server/
 
 # Copy frontend files
-COPY index.html vitamind.css ./
+COPY index.html ./
+COPY css/ ./css/
 COPY modules/ ./modules/
 COPY icons/ ./icons/
 COPY manifest.json sw.js ./

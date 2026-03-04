@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const { body, param, validationResult } = require('express-validator');
 const { run, get, all, init, close } = require('./db');
+const { startWorker, generateUserAnalytics, generateInsights } = require('./analytics_worker');
 
 const app = express();
 const isProduction = process.env.NODE_ENV === 'production';
@@ -139,6 +140,9 @@ let server;
     server = app.listen(PORT, () => {
       console.log(`DOMUS Server listening on port ${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+      
+      // Start analytics worker (cron)
+      startWorker();
     });
     
     server.on('error', (err) => {
@@ -392,6 +396,67 @@ app.get('/api/me', authMiddleware, async (req, res) => {
   }
 });
 
+// ===== TASK GROUPS CRUD =====
+app.get('/api/task-groups', authMiddleware, async (req, res) => {
+  try {
+    const groups = await all('SELECT * FROM task_groups WHERE user_id = ? ORDER BY sort_order ASC, name ASC', [req.user.id]);
+    res.json({ groups });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.post('/api/task-groups', authMiddleware, async (req, res) => {
+  const { name, color, icon } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ message: 'Name is required' });
+  try {
+    const maxOrder = await get('SELECT COALESCE(MAX(sort_order), -1) as max_order FROM task_groups WHERE user_id = ?', [req.user.id]);
+    const result = await run(
+      'INSERT INTO task_groups (user_id, name, color, icon, sort_order) VALUES (?, ?, ?, ?, ?) RETURNING id',
+      [req.user.id, name.trim(), color || '#6366F1', icon || 'fa-folder', (maxOrder?.max_order ?? -1) + 1]
+    );
+    const group = await get('SELECT * FROM task_groups WHERE id = ?', [result.lastID]);
+    res.json({ group });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.put('/api/task-groups/:id', authMiddleware, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { name, color, icon, sort_order } = req.body;
+  try {
+    const group = await get('SELECT * FROM task_groups WHERE id = ? AND user_id = ?', [id, req.user.id]);
+    if (!group) return res.status(404).json({ message: 'Not found' });
+    await run(
+      'UPDATE task_groups SET name = ?, color = ?, icon = ?, sort_order = ? WHERE id = ?',
+      [name ?? group.name, color ?? group.color, icon ?? group.icon, sort_order ?? group.sort_order, id]
+    );
+    const updated = await get('SELECT * FROM task_groups WHERE id = ?', [id]);
+    res.json({ group: updated });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.delete('/api/task-groups/:id', authMiddleware, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  try {
+    const group = await get('SELECT * FROM task_groups WHERE id = ? AND user_id = ?', [id, req.user.id]);
+    if (!group) return res.status(404).json({ message: 'Not found' });
+    // Set tasks in this group to null group
+    await run('UPDATE tasks SET group_id = NULL WHERE group_id = ? AND user_id = ?', [id, req.user.id]);
+    await run('DELETE FROM task_groups WHERE id = ?', [id]);
+    res.json({ message: 'Deleted' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
 // Tasks CRUD (isolated by user_id)
 app.get('/api/tasks', authMiddleware, async (req, res) => {
   try {
@@ -427,12 +492,12 @@ app.patch('/api/tasks/reorder', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/tasks', authMiddleware, validateTask, handleValidationErrors, async (req, res) => {
-  const { text, priority, category, due_date, notes, status, subtasks, tags, estimated_minutes, recurrence, life_area, urgency, impact, energy, planned_date, linked_goal_id } = req.body;
+  const { text, priority, category, due_date, notes, status, subtasks, tags, estimated_minutes, recurrence, life_area, urgency, impact, energy, planned_date, linked_goal_id, group_id } = req.body;
   try {
     const tagsStr = Array.isArray(tags) ? tags.join(',') : (tags || '');
     const result = await run(
-      'INSERT INTO tasks (user_id, text, priority, category, due_date, notes, status, tags, estimated_minutes, recurrence, life_area, urgency, impact, energy, planned_date, linked_goal_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
-      [req.user.id, text, priority || 'low', category || '', due_date || null, notes || '', status || 'todo', tagsStr, estimated_minutes || 0, recurrence || '', life_area || '', urgency || 1, impact || 1, energy || 1, planned_date || null, linked_goal_id || null]
+      'INSERT INTO tasks (user_id, text, priority, category, due_date, notes, status, tags, estimated_minutes, recurrence, life_area, urgency, impact, energy, planned_date, linked_goal_id, group_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
+      [req.user.id, text, priority || 'low', category || '', due_date || null, notes || '', status || 'todo', tagsStr, estimated_minutes || 0, recurrence || '', life_area || '', urgency || 1, impact || 1, energy || 1, planned_date || null, linked_goal_id || null, group_id || null]
     );
     const taskId = result.lastID;
     // Insert subtasks into task_subtasks table
@@ -612,7 +677,7 @@ app.delete('/api/finances/:id', authMiddleware, validateId, handleValidationErro
 // PUT endpoints for editing
 app.put('/api/tasks/:id', authMiddleware, validateId, validateTask, handleValidationErrors, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { text, priority, category, due_date, notes, sort_order, status, subtasks, tags, estimated_minutes, recurrence, life_area, urgency, impact, energy, planned_date, linked_goal_id } = req.body;
+  const { text, priority, category, due_date, notes, sort_order, status, subtasks, tags, estimated_minutes, recurrence, life_area, urgency, impact, energy, planned_date, linked_goal_id, group_id } = req.body;
   try {
     const task = await get('SELECT * FROM tasks WHERE id = ? AND user_id = ?', [id, req.user.id]);
     if (!task) return res.status(404).json({ message: 'Not found' });
@@ -621,8 +686,8 @@ app.put('/api/tasks/:id', authMiddleware, validateId, validateTask, handleValida
     const newCompleted = newStatus === 'done';
     const completedAt = newStatus === 'done' && task.status !== 'done' ? new Date().toISOString() : (newStatus !== 'done' ? null : task.completed_at);
     await run(
-      'UPDATE tasks SET text = ?, priority = ?, category = ?, due_date = ?, notes = ?, sort_order = ?, status = ?, completed = ?, tags = ?, estimated_minutes = ?, recurrence = ?, completed_at = ?, life_area = ?, urgency = ?, impact = ?, energy = ?, planned_date = ?, linked_goal_id = ? WHERE id = ?',
-      [text, priority || task.priority, category ?? task.category, due_date ?? task.due_date, notes ?? task.notes, sort_order ?? task.sort_order, newStatus, newCompleted, tagsStr, estimated_minutes ?? task.estimated_minutes ?? 0, recurrence ?? task.recurrence ?? '', completedAt, life_area ?? task.life_area ?? '', urgency ?? task.urgency ?? 1, impact ?? task.impact ?? 1, energy ?? task.energy ?? 1, planned_date ?? task.planned_date, linked_goal_id ?? task.linked_goal_id, id]
+      'UPDATE tasks SET text = ?, priority = ?, category = ?, due_date = ?, notes = ?, sort_order = ?, status = ?, completed = ?, tags = ?, estimated_minutes = ?, recurrence = ?, completed_at = ?, life_area = ?, urgency = ?, impact = ?, energy = ?, planned_date = ?, linked_goal_id = ?, group_id = ? WHERE id = ?',
+      [text, priority || task.priority, category ?? task.category, due_date ?? task.due_date, notes ?? task.notes, sort_order ?? task.sort_order, newStatus, newCompleted, tagsStr, estimated_minutes ?? task.estimated_minutes ?? 0, recurrence ?? task.recurrence ?? '', completedAt, life_area ?? task.life_area ?? '', urgency ?? task.urgency ?? 1, impact ?? task.impact ?? 1, energy ?? task.energy ?? 1, planned_date ?? task.planned_date, linked_goal_id ?? task.linked_goal_id, group_id !== undefined ? group_id : task.group_id, id]
     );
     // Sync subtasks if provided
     if (subtasks !== undefined && Array.isArray(subtasks)) {
@@ -1037,6 +1102,24 @@ app.delete('/api/goals/:id', authMiddleware, validateId, handleValidationErrors,
     res.json({ message: 'Deleted' });
   } catch (err) {
     console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// ===== AI LIFE ANALYSIS ENDPOINT =====
+app.get('/api/analytics/insights', authMiddleware, async (req, res) => {
+  try {
+    const analytics = await generateUserAnalytics(req.user.id);
+    const insights = generateInsights(analytics);
+    
+    res.json({
+      insights,
+      analytics,
+      generatedAt: new Date().toISOString(),
+      period: analytics.period
+    });
+  } catch (err) {
+    console.error('AI Insights error:', err);
     res.status(500).json({ message: 'Internal error' });
   }
 });

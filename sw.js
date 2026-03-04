@@ -1,13 +1,17 @@
 /**
- * DOMUS Service Worker
- * Offline support and caching
+ * DOMUS Service Worker v10
+ * Smart Cache — Stale While Revalidate
  */
 
-const CACHE_VERSION = 'domus-v9';
+const CACHE_VERSION = 'domus-v10';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
-  '/vitamind.css',
+  '/css/layout.css',
+  '/css/tasks.css',
+  '/css/finance.css',
+  '/css/auth.css',
+  '/css/patterns.css',
   '/modules/utils.js',
   '/modules/app.js',
   '/modules/auth.js',
@@ -90,47 +94,56 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Same-origin assets (HTML, CSS, JS) — Network First
+  // Same-origin assets (HTML, CSS, JS) — Stale While Revalidate
+  // Serve cached version instantly, update cache in background
   if (url.origin === self.location.origin) {
     event.respondWith(
-      fetch(request)
-        .then((networkResponse) => {
-          if (networkResponse.ok) {
-            const responseClone = networkResponse.clone();
-            caches.open(CACHE_VERSION)
-              .then((cache) => cache.put(request, responseClone));
+      caches.open(CACHE_VERSION).then((cache) => {
+        return cache.match(request).then((cachedResponse) => {
+          // Background revalidation — always fetch fresh copy
+          const fetchPromise = fetch(request).then((networkResponse) => {
+            if (networkResponse.ok) {
+              cache.put(request, networkResponse.clone());
+            }
+            return networkResponse;
+          }).catch(() => {
+            // Network failed — cached response will be used (or fallback)
+            return null;
+          });
+
+          // Return cached immediately if available, otherwise wait for network
+          if (cachedResponse) {
+            return cachedResponse;
           }
-          return networkResponse;
-        })
-        .catch(() => {
-          return caches.match(request)
-            .then((cachedResponse) => {
-              if (cachedResponse) return cachedResponse;
-              if (request.headers.get('accept')?.includes('text/html')) {
-                return caches.match('/index.html');
-              }
-              return new Response('Offline', { status: 503 });
-            });
-        })
+          // No cache — must wait for network
+          return fetchPromise.then((networkResponse) => {
+            if (networkResponse) return networkResponse;
+            // Offline + no cache: fallback to index.html for HTML requests
+            if (request.headers.get('accept')?.includes('text/html')) {
+              return cache.match('/index.html');
+            }
+            return new Response('Offline', { status: 503 });
+          });
+        });
+      })
     );
     return;
   }
 
-  // External assets (CDN fonts, libraries) — Cache First
+  // External assets (CDN fonts, libraries) — Cache First with revalidation
   event.respondWith(
-    caches.match(request)
-      .then((cachedResponse) => {
-        if (cachedResponse) return cachedResponse;
-        return fetch(request)
-          .then((networkResponse) => {
-            if (networkResponse.ok) {
-              const responseClone = networkResponse.clone();
-              caches.open(CACHE_VERSION)
-                .then((cache) => cache.put(request, responseClone));
-            }
-            return networkResponse;
-          });
-      })
+    caches.open(CACHE_VERSION).then((cache) => {
+      return cache.match(request).then((cachedResponse) => {
+        const fetchPromise = fetch(request).then((networkResponse) => {
+          if (networkResponse.ok) {
+            cache.put(request, networkResponse.clone());
+          }
+          return networkResponse;
+        }).catch(() => null);
+
+        return cachedResponse || fetchPromise;
+      });
+    })
   );
 });
 

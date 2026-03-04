@@ -416,6 +416,28 @@ async function init() {
     await client.query('CREATE INDEX IF NOT EXISTS idx_analytics_user_id ON analytics_snapshots(user_id);');
     await client.query('CREATE INDEX IF NOT EXISTS idx_analytics_type ON analytics_snapshots(type);');
 
+    // ===== NEW TABLE: task_groups =====
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS task_groups (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name VARCHAR(100) NOT NULL,
+        color VARCHAR(10) DEFAULT '#6366F1',
+        icon VARCHAR(30) DEFAULT 'fa-folder',
+        sort_order INTEGER DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_task_groups_user_id ON task_groups(user_id);');
+
+    // ===== MIGRATION: Add group_id to tasks =====
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE tasks ADD COLUMN group_id INTEGER REFERENCES task_groups(id) ON DELETE SET NULL;
+      EXCEPTION WHEN duplicate_column THEN NULL;
+      END $$;
+    `);
+
     await client.query('COMMIT');
     console.log('PostgreSQL database initialized with tables and indexes');
   } catch (err) {

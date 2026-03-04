@@ -1,56 +1,172 @@
-// Main Application Controller
+// Main Application Controller — Lazy Loading Architecture
 class DomusApp {
     constructor() {
         this.authManager = new AuthManager();
-        this.taskManager = new TaskManager(this.authManager);
-        this.financeManager = new FinanceManager(this.authManager);
-        this.thoughtsManager = new ThoughtsManager(this.authManager);
-        this.gratitudeManager = new GratitudeManager(this.authManager);
-        this.purposeManager = new PurposeManager(this.authManager);
-        this.patternsManager = new PatternsManager(this.authManager);
-        this.habitManager = new HabitManager(this.authManager);
+        
+        // Module registry — lazy loaded on demand
+        this._modules = {
+            tasks: { loaded: false, manager: null, cls: 'TaskManager', script: 'modules/tasks.js', container: 'module-tasks' },
+            finances: { loaded: false, manager: null, cls: 'FinanceManager', script: 'modules/finances.js', container: 'module-finances' },
+            thoughts: { loaded: false, manager: null, cls: 'ThoughtsManager', script: 'modules/thoughts.js', container: 'module-thoughts' },
+            gratitude: { loaded: false, manager: null, cls: 'GratitudeManager', script: 'modules/gratitude.js', container: 'module-gratitude' },
+            purpose: { loaded: false, manager: null, cls: 'PurposeManager', script: 'modules/purpose.js', container: 'module-purpose' },
+            patterns: { loaded: false, manager: null, cls: 'PatternsManager', script: 'modules/patterns.js', container: 'module-patterns' },
+            habits: { loaded: false, manager: null, cls: 'HabitManager', script: 'modules/habits.js', container: 'module-habits' }
+        };
+
+        // Compatibility getters for existing code
+        Object.defineProperty(this, 'taskManager', { get: () => this._modules.tasks.manager });
+        Object.defineProperty(this, 'financeManager', { get: () => this._modules.finances.manager });
+        Object.defineProperty(this, 'thoughtsManager', { get: () => this._modules.thoughts.manager });
+        Object.defineProperty(this, 'gratitudeManager', { get: () => this._modules.gratitude.manager });
+        Object.defineProperty(this, 'purposeManager', { get: () => this._modules.purpose.manager });
+        Object.defineProperty(this, 'patternsManager', { get: () => this._modules.patterns.manager });
+        Object.defineProperty(this, 'habitManager', { get: () => this._modules.habits.manager });
         
         this.settings = {
             theme: 'light',
             userName: 'Usuário'
         };
 
+        this._loadingModules = new Set();
+
         // ===== AUTH EVENT HANDLERS =====
         this.authManager.onLogin(() => this._handleLogin());
         this.authManager.onLogout(() => this._handleLogout());
     }
 
+    // ===== LAZY MODULE LOADING =====
+    
+    /** Load a single module on demand */
+    async loadModule(name) {
+        const mod = this._modules[name];
+        if (!mod || mod.loaded) return mod?.manager;
+        if (this._loadingModules.has(name)) {
+            // Wait for ongoing load
+            return new Promise(resolve => {
+                const check = () => {
+                    if (mod.loaded) return resolve(mod.manager);
+                    setTimeout(check, 50);
+                };
+                check();
+            });
+        }
+
+        this._loadingModules.add(name);
+
+        try {
+            // Load script if class not available yet
+            if (!window[mod.cls]) {
+                await this._loadScript(mod.script);
+            }
+
+            const Cls = window[mod.cls];
+            if (!Cls) throw new Error(`Class ${mod.cls} not found after loading ${mod.script}`);
+
+            // Inject template
+            const container = document.getElementById(mod.container);
+            if (container && Cls.getTemplate && !container.innerHTML.trim()) {
+                container.innerHTML = Cls.getTemplate();
+            }
+
+            // Instantiate
+            mod.manager = new Cls(this.authManager);
+            mod.manager.setupEventListeners();
+
+            // Load data and init if logged in
+            if (this.authManager.isLoggedIn()) {
+                if (mod.manager.loadData) mod.manager.loadData();
+                if (mod.manager.init) mod.manager.init();
+                if (mod.manager.loadServerData) {
+                    mod.manager.loadServerData().catch(err => 
+                        console.warn(`Erro ao carregar dados do servidor (${name}):`, err)
+                    );
+                }
+            }
+
+            mod.loaded = true;
+            console.log(`[DOMUS] Module "${name}" loaded on demand`);
+            return mod.manager;
+        } catch (err) {
+            console.error(`[DOMUS] Failed to load module "${name}":`, err);
+            return null;
+        } finally {
+            this._loadingModules.delete(name);
+        }
+    }
+
+    /** Load all modules (for bulk operations like export/import) */
+    async loadAllModules() {
+        const names = Object.keys(this._modules);
+        await Promise.all(names.map(n => this.loadModule(n)));
+    }
+
+    /** Dynamic script loader */
+    _loadScript(src) {
+        return new Promise((resolve, reject) => {
+            // If already loaded, resolve immediately
+            const existing = document.querySelector(`script[src="${src}"]`);
+            if (existing) return resolve();
+
+            const script = document.createElement('script');
+            script.src = src;
+            script.onload = resolve;
+            script.onerror = () => reject(new Error(`Failed to load ${src}`));
+            document.head.appendChild(script);
+        });
+    }
+
     // ===== AUTH-GATED LIFECYCLE =====
 
-    /** Called after login — load all data from server and show app */
+    /** Called after login — load active view module, then others in background */
     async _handleLogin() {
         this.showApp();
-        this.loadData();      // local cache for this user
-        this.initializeModules();
         this.applyTheme();
-        await this.loadServerData();  // overwrite with server truth
-        this.saveData();              // cache server data locally
         this.updateAuthHeader();
+        
+        // Load the currently visible view module first
+        const activeView = document.querySelector('.view-active');
+        const currentView = activeView?.id?.replace('view-', '') || 'home';
+        
+        if (this._modules[currentView]) {
+            await this.loadModule(currentView);
+        }
+
+        // Load remaining modules in background (low priority)
+        setTimeout(() => this._loadRemainingModules(), 300);
     }
 
     /** Called on logout — clear memory, show auth screen */
     _handleLogout() {
         this._clearAllModuleData();
-        this.initializeModules(); // re-render empty
+        // Re-render loaded modules as empty
+        for (const [name, mod] of Object.entries(this._modules)) {
+            if (mod.loaded && mod.manager?.init) mod.manager.init();
+        }
         this.hideApp();
     }
 
-    /** Clear in-memory data for all modules (does NOT delete localStorage) */
+    /** Clear in-memory data for all loaded modules */
     _clearAllModuleData() {
-        this.taskManager.tasks = [];
-        this.financeManager.transactions = [];
-        this.financeManager.income = 0;
-        this.financeManager.expenses = 0;
-        this.thoughtsManager.thoughts = [];
-        this.gratitudeManager.gratitude = [];
-        this.purposeManager.purpose = { mission: '', goals: '', values: '' };
-        this.patternsManager.patterns = [];
-        this.habitManager.habits = [];
+        const m = this._modules;
+        if (m.tasks.manager) { m.tasks.manager.tasks = []; }
+        if (m.finances.manager) { m.finances.manager.transactions = []; m.finances.manager.income = 0; m.finances.manager.expenses = 0; }
+        if (m.thoughts.manager) { m.thoughts.manager.thoughts = []; }
+        if (m.gratitude.manager) { m.gratitude.manager.gratitude = []; }
+        if (m.purpose.manager) { m.purpose.manager.purpose = { mission: '', goals: '', values: '' }; }
+        if (m.patterns.manager) { m.patterns.manager.analytics = null; }
+        if (m.habits.manager) { m.habits.manager.habits = []; }
+    }
+
+    /** Load remaining unloaded modules in background */
+    async _loadRemainingModules() {
+        for (const name of Object.keys(this._modules)) {
+            if (!this._modules[name].loaded) {
+                await this.loadModule(name);
+            }
+        }
+        // Save all data to local cache after full sync
+        this.saveData();
     }
 
     /** Show/hide app vs auth screen */
@@ -91,37 +207,38 @@ class DomusApp {
         // Check if already logged in (token exists and valid)
         if (this.authManager.isLoggedIn()) {
             this.showApp();
-            this.loadData();
-            this.initializeModules();
-            this.loadServerData().then(() => {
-                this.saveData();
-                this.updateAuthHeader();
+            this.updateAuthHeader();
+            // Load home stats modules first (tasks + finances for dashboard)
+            Promise.all([
+                this.loadModule('tasks'),
+                this.loadModule('finances'),
+                this.loadModule('thoughts'),
+                this.loadModule('gratitude')
+            ]).then(() => {
+                // Load rest in background
+                setTimeout(() => this._loadRemainingModules(), 500);
             });
         } else {
             this.hideApp();
         }
     }
 
-    // Bind event listeners for all content modules (call after templates are in DOM)
+    // Bind event listeners for loaded modules only
     bindAllModuleEvents() {
-        this.taskManager.setupEventListeners();
-        this.financeManager.setupEventListeners();
-        this.thoughtsManager.setupEventListeners();
-        this.gratitudeManager.setupEventListeners();
-        this.purposeManager.setupEventListeners();
-        this.patternsManager.setupEventListeners();
-        this.habitManager.setupEventListeners();
+        for (const mod of Object.values(this._modules)) {
+            if (mod.loaded && mod.manager?.setupEventListeners) {
+                mod.manager.setupEventListeners();
+            }
+        }
     }
 
-    // Initialize all modules
+    // Initialize loaded modules only
     initializeModules() {
-        this.taskManager.init();
-        this.financeManager.init();
-        this.thoughtsManager.init();
-        this.gratitudeManager.init();
-        this.purposeManager.init();
-        this.patternsManager.init();
-        this.habitManager.init();
+        for (const mod of Object.values(this._modules)) {
+            if (mod.loaded && mod.manager?.init) {
+                mod.manager.init();
+            }
+        }
     }
 
     // Setup global event listeners
@@ -197,14 +314,13 @@ class DomusApp {
         if (!this.authManager.getToken()) return;
 
         try {
-            await Promise.all([
-                this.taskManager.loadServerData(),
-                this.financeManager.loadServerData(),
-                this.thoughtsManager.loadServerData(),
-                this.gratitudeManager.loadServerData(),
-                this.purposeManager.loadServerData(),
-                this.habitManager.loadServerData()
-            ]);
+            const loadPromises = [];
+            for (const mod of Object.values(this._modules)) {
+                if (mod.loaded && mod.manager?.loadServerData) {
+                    loadPromises.push(mod.manager.loadServerData());
+                }
+            }
+            await Promise.all(loadPromises);
             
             this.authManager.showNotification('Dados sincronizados do servidor.', 'success');
         } catch (err) {
@@ -213,19 +329,22 @@ class DomusApp {
     }
 
     // Export data
-    exportData() {
+    async exportData() {
+        // Ensure all modules loaded before export
+        await this.loadAllModules();
+        
         const data = {
-            tasks: this.taskManager.tasks,
+            tasks: this.taskManager?.tasks || [],
             finances: {
-                transactions: this.financeManager.transactions,
-                income: this.financeManager.income,
-                expenses: this.financeManager.expenses
+                transactions: this.financeManager?.transactions || [],
+                income: this.financeManager?.income || 0,
+                expenses: this.financeManager?.expenses || 0
             },
-            thoughts: this.thoughtsManager.thoughts,
-            gratitude: this.gratitudeManager.gratitude,
-            purpose: this.purposeManager.purpose,
-            patterns: this.patternsManager.patterns,
-            habits: this.habitManager.exportData(),
+            thoughts: this.thoughtsManager?.thoughts || [],
+            gratitude: this.gratitudeManager?.gratitude || [],
+            purpose: this.purposeManager?.purpose || {},
+            patterns: this.patternsManager?.analytics || null,
+            habits: this.habitManager?.exportData?.() || [],
             settings: this.settings,
             exportDate: new Date().toISOString()
         };
@@ -251,9 +370,12 @@ class DomusApp {
     }
 
     // Import data
-    importData(event) {
+    async importData(event) {
         const file = event.target.files[0];
         if (!file) return;
+
+        // Ensure all modules loaded before import
+        await this.loadAllModules();
 
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -266,27 +388,27 @@ class DomusApp {
                 }
 
                 // Import data to modules
-                if (importedData.tasks) {
+                if (importedData.tasks && this.taskManager) {
                     this.taskManager.tasks = importedData.tasks;
                 }
-                if (importedData.finances) {
+                if (importedData.finances && this.financeManager) {
                     this.financeManager.transactions = importedData.finances.transactions || [];
                     this.financeManager.income = importedData.finances.income || 0;
                     this.financeManager.expenses = importedData.finances.expenses || 0;
                 }
-                if (importedData.thoughts) {
+                if (importedData.thoughts && this.thoughtsManager) {
                     this.thoughtsManager.thoughts = importedData.thoughts;
                 }
-                if (importedData.gratitude) {
+                if (importedData.gratitude && this.gratitudeManager) {
                     this.gratitudeManager.gratitude = importedData.gratitude;
                 }
-                if (importedData.purpose) {
+                if (importedData.purpose && this.purposeManager) {
                     this.purposeManager.purpose = { ...this.purposeManager.purpose, ...importedData.purpose };
                 }
-                if (importedData.patterns) {
-                    this.patternsManager.patterns = importedData.patterns;
+                if (importedData.patterns && this.patternsManager) {
+                    this.patternsManager.analytics = importedData.patterns;
                 }
-                if (importedData.habits) {
+                if (importedData.habits && this.habitManager) {
                     this.habitManager.importData(importedData.habits);
                 }
                 if (importedData.settings) {
@@ -308,19 +430,19 @@ class DomusApp {
     }
 
     // Reset data
-    resetData() {
+    async resetData() {
         if (!confirm('Tem certeza que deseja limpar todos os dados? Esta ação não pode ser desfeita.')) {
             return;
         }
 
-        this.taskManager.tasks = [];
-        this.financeManager.transactions = [];
-        this.financeManager.income = 0;
-        this.financeManager.expenses = 0;
-        this.thoughtsManager.thoughts = [];
-        this.gratitudeManager.gratitude = [];
-        this.patternsManager.patterns = [];
-        this.habitManager.habits = [];
+        await this.loadAllModules();
+        
+        if (this.taskManager) this.taskManager.tasks = [];
+        if (this.financeManager) { this.financeManager.transactions = []; this.financeManager.income = 0; this.financeManager.expenses = 0; }
+        if (this.thoughtsManager) this.thoughtsManager.thoughts = [];
+        if (this.gratitudeManager) this.gratitudeManager.gratitude = [];
+        if (this.patternsManager) this.patternsManager.analytics = null;
+        if (this.habitManager) this.habitManager.habits = [];
 
         this.initializeModules();
         this.saveData();
@@ -338,15 +460,11 @@ class DomusApp {
         return hasTasks && hasFinances && hasThoughts;
     }
 
-    // Save/load local data
+    // Save/load local data (only for loaded modules)
     saveData() {
-        this.taskManager.saveData();
-        this.financeManager.saveData();
-        this.thoughtsManager.saveData();
-        this.gratitudeManager.saveData();
-        this.purposeManager.saveData();
-        this.patternsManager.saveData();
-        this.habitManager.saveData();
+        for (const mod of Object.values(this._modules)) {
+            if (mod.loaded && mod.manager?.saveData) mod.manager.saveData();
+        }
         
         try {
             localStorage.setItem(this.authManager.getStorageKey('settings'), JSON.stringify(this.settings));
@@ -356,13 +474,9 @@ class DomusApp {
     }
 
     loadData() {
-        this.taskManager.loadData();
-        this.financeManager.loadData();
-        this.thoughtsManager.loadData();
-        this.gratitudeManager.loadData();
-        this.purposeManager.loadData();
-        this.patternsManager.loadData();
-        this.habitManager.loadData();
+        for (const mod of Object.values(this._modules)) {
+            if (mod.loaded && mod.manager?.loadData) mod.manager.loadData();
+        }
         
         try {
             const raw = localStorage.getItem(this.authManager.getStorageKey('settings'));
