@@ -271,6 +271,14 @@ const validateTask = [
   body('urgency').optional().isInt({ min: 1, max: 5 }).toInt(),
   body('impact').optional().isInt({ min: 1, max: 5 }).toInt(),
   body('energy').optional().isInt({ min: 1, max: 5 }).toInt(),
+  body('due_time')
+    .optional({ nullable: true, checkFalsy: true })
+    .matches(/^([01]\d|2[0-3]):([0-5]\d)$/)
+    .withMessage('Horário deve estar no formato HH:mm'),
+  body('reminder_at')
+    .optional({ nullable: true, checkFalsy: true })
+    .isISO8601()
+    .withMessage('Lembrete inválido'),
 ];
 
 const validateThought = [
@@ -492,12 +500,12 @@ app.patch('/api/tasks/reorder', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/tasks', authMiddleware, validateTask, handleValidationErrors, async (req, res) => {
-  const { text, priority, category, due_date, notes, status, subtasks, tags, estimated_minutes, recurrence, life_area, urgency, impact, energy, planned_date, linked_goal_id, group_id } = req.body;
+  const { text, priority, category, due_date, due_time, reminder_at, notes, status, subtasks, tags, estimated_minutes, recurrence, life_area, urgency, impact, energy, planned_date, linked_goal_id, group_id } = req.body;
   try {
     const tagsStr = Array.isArray(tags) ? tags.join(',') : (tags || '');
     const result = await run(
-      'INSERT INTO tasks (user_id, text, priority, category, due_date, notes, status, tags, estimated_minutes, recurrence, life_area, urgency, impact, energy, planned_date, linked_goal_id, group_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
-      [req.user.id, text, priority || 'low', category || '', due_date || null, notes || '', status || 'todo', tagsStr, estimated_minutes || 0, recurrence || '', life_area || '', urgency || 1, impact || 1, energy || 1, planned_date || null, linked_goal_id || null, group_id || null]
+      'INSERT INTO tasks (user_id, text, priority, category, due_date, due_time, reminder_at, notes, status, tags, estimated_minutes, recurrence, life_area, urgency, impact, energy, planned_date, linked_goal_id, group_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
+      [req.user.id, text, priority || 'low', category || '', due_date || null, due_time || '', reminder_at || null, notes || '', status || 'todo', tagsStr, estimated_minutes || 0, recurrence || '', life_area || '', urgency || 1, impact || 1, energy || 1, planned_date || null, linked_goal_id || null, group_id || null]
     );
     const taskId = result.lastID;
     // Insert subtasks into task_subtasks table
@@ -677,7 +685,7 @@ app.delete('/api/finances/:id', authMiddleware, validateId, handleValidationErro
 // PUT endpoints for editing
 app.put('/api/tasks/:id', authMiddleware, validateId, validateTask, handleValidationErrors, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { text, priority, category, due_date, notes, sort_order, status, subtasks, tags, estimated_minutes, recurrence, life_area, urgency, impact, energy, planned_date, linked_goal_id, group_id } = req.body;
+  const { text, priority, category, due_date, due_time, reminder_at, notes, sort_order, status, subtasks, tags, estimated_minutes, recurrence, life_area, urgency, impact, energy, planned_date, linked_goal_id, group_id } = req.body;
   try {
     const task = await get('SELECT * FROM tasks WHERE id = ? AND user_id = ?', [id, req.user.id]);
     if (!task) return res.status(404).json({ message: 'Not found' });
@@ -686,8 +694,8 @@ app.put('/api/tasks/:id', authMiddleware, validateId, validateTask, handleValida
     const newCompleted = newStatus === 'done';
     const completedAt = newStatus === 'done' && task.status !== 'done' ? new Date().toISOString() : (newStatus !== 'done' ? null : task.completed_at);
     await run(
-      'UPDATE tasks SET text = ?, priority = ?, category = ?, due_date = ?, notes = ?, sort_order = ?, status = ?, completed = ?, tags = ?, estimated_minutes = ?, recurrence = ?, completed_at = ?, life_area = ?, urgency = ?, impact = ?, energy = ?, planned_date = ?, linked_goal_id = ?, group_id = ? WHERE id = ?',
-      [text, priority || task.priority, category ?? task.category, due_date ?? task.due_date, notes ?? task.notes, sort_order ?? task.sort_order, newStatus, newCompleted, tagsStr, estimated_minutes ?? task.estimated_minutes ?? 0, recurrence ?? task.recurrence ?? '', completedAt, life_area ?? task.life_area ?? '', urgency ?? task.urgency ?? 1, impact ?? task.impact ?? 1, energy ?? task.energy ?? 1, planned_date ?? task.planned_date, linked_goal_id ?? task.linked_goal_id, group_id !== undefined ? group_id : task.group_id, id]
+      'UPDATE tasks SET text = ?, priority = ?, category = ?, due_date = ?, due_time = ?, reminder_at = ?, notes = ?, sort_order = ?, status = ?, completed = ?, tags = ?, estimated_minutes = ?, recurrence = ?, completed_at = ?, life_area = ?, urgency = ?, impact = ?, energy = ?, planned_date = ?, linked_goal_id = ?, group_id = ? WHERE id = ?',
+      [text, priority || task.priority, category ?? task.category, due_date ?? task.due_date, due_time ?? task.due_time ?? '', reminder_at ?? task.reminder_at ?? null, notes ?? task.notes, sort_order ?? task.sort_order, newStatus, newCompleted, tagsStr, estimated_minutes ?? task.estimated_minutes ?? 0, recurrence ?? task.recurrence ?? '', completedAt, life_area ?? task.life_area ?? '', urgency ?? task.urgency ?? 1, impact ?? task.impact ?? 1, energy ?? task.energy ?? 1, planned_date ?? task.planned_date, linked_goal_id ?? task.linked_goal_id, group_id !== undefined ? group_id : task.group_id, id]
     );
     // Sync subtasks if provided
     if (subtasks !== undefined && Array.isArray(subtasks)) {

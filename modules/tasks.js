@@ -1,22 +1,12 @@
-// Task Management Module — Professional Edition v3 (Groups + Subtasks)
 class TaskManager {
     constructor(authManager) {
         this.auth = authManager;
         this.tasks = [];
-        this.groups = [];
         this.currentFilter = 'all';
-        this.currentGroupId = null; // null = all groups
         this.searchQuery = '';
-        this.editingTaskId = null;
         this.expandedTaskId = null;
-        this.draggedItem = null;
-        this.viewMode = 'list';
-        this.pomodoroTaskId = null;
-        this.pomodoroTime = 25 * 60;
-        this.pomodoroRunning = false;
-        this.pomodoroInterval = null;
-        this.weeklyViewDate = this._getMondayOfWeek(new Date());
-        this._editingGroupId = null;
+        this.editingTaskId = null;
+        this.modalSubtasks = [];
     }
 
     init() {
@@ -24,624 +14,197 @@ class TaskManager {
     }
 
     setupEventListeners() {
-        const addForm = document.getElementById('task-quick-add-form');
-        if (addForm) addForm.addEventListener('submit', (e) => { e.preventDefault(); this.addTask(); });
+        const newBtn = document.getElementById('pm-new-task-btn');
+        if (newBtn) newBtn.addEventListener('click', () => this.openCreateModal());
 
-        const expandBtn = document.getElementById('task-expand-add');
-        if (expandBtn) expandBtn.addEventListener('click', () => this._toggleExpandedAdd());
+        const form = document.getElementById('pm-task-form');
+        if (form) {
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.saveTaskFromModal();
+            });
+        }
 
-        document.querySelectorAll('.task-filter-chip').forEach(btn => {
+        const addSubBtn = document.getElementById('pm-modal-add-subtask');
+        if (addSubBtn) addSubBtn.addEventListener('click', () => this.addModalSubtask());
+
+        const closeBtn = document.getElementById('pm-modal-close');
+        if (closeBtn) closeBtn.addEventListener('click', () => this.closeTaskModal());
+
+        const cancelBtn = document.getElementById('pm-modal-cancel');
+        if (cancelBtn) cancelBtn.addEventListener('click', () => this.closeTaskModal());
+
+        const overlay = document.getElementById('pm-task-modal-overlay');
+        if (overlay) {
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) this.closeTaskModal();
+            });
+        }
+
+        const searchInput = document.getElementById('pm-search');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                this.searchQuery = (e.target.value || '').trim().toLowerCase();
+                this.renderTasks();
+            });
+        }
+
+        document.querySelectorAll('.pm-filter-chip').forEach((btn) => {
             btn.addEventListener('click', (e) => {
-                document.querySelectorAll('.task-filter-chip').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.pm-filter-chip').forEach((chip) => chip.classList.remove('active'));
                 e.currentTarget.classList.add('active');
-                this.currentFilter = e.currentTarget.getAttribute('data-filter');
+                this.currentFilter = e.currentTarget.dataset.filter || 'all';
                 this.renderTasks();
             });
         });
 
-        const searchInput = document.getElementById('task-search-input');
-        if (searchInput) searchInput.addEventListener('input', (e) => {
-            this.searchQuery = e.target.value.trim().toLowerCase();
-            this.renderTasks();
-        });
-
-        const clearBtn = document.getElementById('task-clear-completed');
-        if (clearBtn) clearBtn.addEventListener('click', () => this.clearCompleted());
-
-        // View toggle
-        const listViewBtn = document.getElementById('task-view-list');
-        const kanbanViewBtn = document.getElementById('task-view-kanban');
-        const weeklyViewBtn = document.getElementById('task-view-weekly');
-        if (listViewBtn) listViewBtn.addEventListener('click', () => this.setViewMode('list'));
-        if (kanbanViewBtn) kanbanViewBtn.addEventListener('click', () => this.setViewMode('kanban'));
-        if (weeklyViewBtn) weeklyViewBtn.addEventListener('click', () => this.setViewMode('weekly'));
-
-        const weeklyPrev = document.getElementById('weekly-prev');
-        const weeklyNext = document.getElementById('weekly-next');
-        if (weeklyPrev) weeklyPrev.addEventListener('click', () => { this.weeklyViewDate.setDate(this.weeklyViewDate.getDate() - 7); this.renderWeeklyPlanner(); });
-        if (weeklyNext) weeklyNext.addEventListener('click', () => { this.weeklyViewDate.setDate(this.weeklyViewDate.getDate() + 7); this.renderWeeklyPlanner(); });
-
-        // Add group button
-        const addGroupBtn = document.getElementById('task-add-group-btn');
-        if (addGroupBtn) addGroupBtn.addEventListener('click', () => this.showAddGroupForm());
-    }
-
-    // ===== VIEW MODE =====
-    setViewMode(mode) {
-        this.viewMode = mode;
-        document.getElementById('task-view-list')?.classList.toggle('active', mode === 'list');
-        document.getElementById('task-view-kanban')?.classList.toggle('active', mode === 'kanban');
-        document.getElementById('task-view-weekly')?.classList.toggle('active', mode === 'weekly');
-        document.getElementById('task-list-container')?.classList.toggle('hidden', mode !== 'list');
-        document.getElementById('task-kanban-container')?.classList.toggle('hidden', mode !== 'kanban');
-        document.getElementById('task-weekly-container')?.classList.toggle('hidden', mode !== 'weekly');
-        if (mode === 'kanban') this.renderKanban();
-        else if (mode === 'weekly') this.renderWeeklyPlanner();
-        else this.renderTasks();
-    }
-
-    // ===== GROUPS CRUD =====
-    async loadGroups() {
-        if (!this.auth.getToken()) return;
-        try {
-            const resp = await this.auth.apiRequest('/api/task-groups', { method: 'GET' });
-            if (resp && Array.isArray(resp.groups)) {
-                this.groups = resp.groups;
-            }
-        } catch (err) { console.warn('Erro ao carregar grupos:', err); }
-    }
-
-    async createGroup(name, color = '#6366f1', icon = 'fa-folder') {
-        if (!name.trim()) return;
-        if (this.auth.getToken()) {
-            try {
-                const resp = await this.auth.apiRequest('/api/task-groups', {
-                    method: 'POST',
-                    body: JSON.stringify({ name: name.trim(), color, icon })
-                });
-                if (resp && resp.group) {
-                    this.groups.push(resp.group);
-                }
-            } catch (err) {
-                this.auth.showNotification(err.message || 'Erro ao criar grupo', 'error');
-                return;
-            }
-        } else {
-            this.groups.push({ id: Date.now(), name: name.trim(), color, icon, sort_order: this.groups.length });
-        }
-        this.renderGroupsSidebar();
-        this.renderGroupSelect();
-        this.auth.showNotification('Grupo criado!', 'success');
-    }
-
-    async updateGroup(id, data) {
-        const group = this.groups.find(g => g.id === id);
-        if (!group) return;
-        if (this.auth.getToken()) {
-            try {
-                const resp = await this.auth.apiRequest(`/api/task-groups/${id}`, {
-                    method: 'PUT',
-                    body: JSON.stringify({ name: data.name || group.name, color: data.color || group.color, icon: data.icon || group.icon, sort_order: data.sort_order ?? group.sort_order })
-                });
-                if (resp && resp.group) Object.assign(group, resp.group);
-            } catch (err) {
-                this.auth.showNotification(err.message || 'Erro', 'error');
-                return;
-            }
-        } else {
-            Object.assign(group, data);
-        }
-        this.renderGroupsSidebar();
-        this.renderGroupSelect();
-    }
-
-    async deleteGroup(id) {
-        if (!confirm('Excluir este grupo? As tarefas serão desvinculadas.')) return;
-        if (this.auth.getToken()) {
-            try { await this.auth.apiRequest(`/api/task-groups/${id}`, { method: 'DELETE' }); }
-            catch (err) { this.auth.showNotification(err.message || 'Erro', 'error'); return; }
-        }
-        this.groups = this.groups.filter(g => g.id !== id);
-        this.tasks.forEach(t => { if (t.groupId === id) t.groupId = null; });
-        if (this.currentGroupId === id) this.currentGroupId = null;
-        this.renderGroupsSidebar();
-        this.renderGroupSelect();
-        this.renderTasks();
-        this.auth.showNotification('Grupo excluído.', 'info');
-    }
-
-    selectGroup(id) {
-        this.currentGroupId = id;
-        this.renderGroupsSidebar();
-        this.renderTasks();
-        this.updateStats();
-    }
-
-    showAddGroupForm() {
-        const container = document.getElementById('task-group-form-area');
-        if (!container) return;
-        container.innerHTML = `
-            <div class="tg-add-form">
-                <input type="text" id="tg-new-name" class="tg-input" placeholder="Nome do grupo..." maxlength="30" />
-                <input type="color" id="tg-new-color" class="tg-color-input" value="#6366f1" title="Cor" />
-                <button class="tg-form-btn tg-form-save" onclick="window.app.taskManager._submitNewGroup()"><i class="fas fa-check"></i></button>
-                <button class="tg-form-btn tg-form-cancel" onclick="document.getElementById('task-group-form-area').innerHTML=''"><i class="fas fa-times"></i></button>
-            </div>`;
-        document.getElementById('tg-new-name')?.focus();
-        document.getElementById('tg-new-name')?.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); this._submitNewGroup(); }
-            if (e.key === 'Escape') { container.innerHTML = ''; }
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') this.closeTaskModal();
         });
     }
 
-    _submitNewGroup() {
-        const name = document.getElementById('tg-new-name')?.value?.trim();
-        const color = document.getElementById('tg-new-color')?.value || '#6366f1';
-        if (!name) return;
-        this.createGroup(name, color);
-        const container = document.getElementById('task-group-form-area');
-        if (container) container.innerHTML = '';
-    }
-
-    // ===== TASK CRUD =====
-    async addTask() {
-        const textInput = document.getElementById('task-add-text');
-        const text = textInput ? textInput.value.trim() : '';
-        if (!text) { this.auth.showNotification('Digite o nome da tarefa.', 'warning'); return; }
-
-        const priority = document.getElementById('task-add-priority')?.value || 'low';
-        const dueDate = document.getElementById('task-add-due')?.value || null;
-        const notes = document.getElementById('task-add-notes')?.value?.trim() || '';
-        const estimatedMinutes = parseInt(document.getElementById('task-add-estimate')?.value) || 0;
-        const groupId = parseInt(document.getElementById('task-add-group')?.value) || this.currentGroupId || null;
-        const description = document.getElementById('task-add-description')?.value?.trim() || '';
-
-        const taskData = {
-            text, priority, due_date: dueDate, notes: description || notes,
-            status: 'todo', subtasks: [], tags: [],
-            estimated_minutes: estimatedMinutes,
-            group_id: groupId,
-            life_area: '',
-            urgency: 1, impact: 1, energy: 1
-        };
-
-        if (this.auth.getToken()) {
-            try {
-                const resp = await this.auth.apiRequest('/api/tasks', { method: 'POST', body: JSON.stringify(taskData) });
-                this.tasks.unshift(this._mapServerTask(resp.task));
-            } catch (err) {
-                this.auth.showNotification(err.message || 'Erro ao criar tarefa', 'error');
-                return;
-            }
-        } else {
-            this.tasks.unshift({
-                id: Date.now(), text, completed: false, priority,
-                dueDate: dueDate, notes: taskData.notes, sortOrder: 0, status: 'todo',
-                subtasks: [], tags: [], estimatedMinutes, groupId: groupId,
-                createdAt: new Date().toISOString(), completedAt: null,
-                category: '', lifeArea: '', urgency: 1, impact: 1, energy: 1
-            });
-        }
-
-        if (textInput) textInput.value = '';
-        if (document.getElementById('task-add-notes')) document.getElementById('task-add-notes').value = '';
-        if (document.getElementById('task-add-due')) document.getElementById('task-add-due').value = '';
-        if (document.getElementById('task-add-estimate')) document.getElementById('task-add-estimate').value = '';
-        if (document.getElementById('task-add-description')) document.getElementById('task-add-description').value = '';
-        this._collapseExpandedAdd();
-        this.renderAll();
-        this.saveData();
-        this.auth.showNotification('Tarefa adicionada!', 'success');
-    }
-
-    async toggleTask(id) {
-        const task = this.tasks.find(t => t.id === id);
-        if (!task) return;
-
-        if (this.auth.getToken() && Number.isInteger(id)) {
-            try {
-                const resp = await this.auth.apiRequest(`/api/tasks/${id}/toggle`, { method: 'PATCH' });
-                Object.assign(task, this._mapServerTask(resp.task));
-            } catch (err) { this.auth.showNotification(err.message || 'Erro', 'error'); return; }
-        } else {
-            task.completed = !task.completed;
-            task.status = task.completed ? 'done' : 'todo';
-            task.completedAt = task.completed ? new Date().toISOString() : null;
-        }
-
-        this.renderAll();
-        this.saveData();
-    }
-
-    async setTaskStatus(id, status) {
-        const task = this.tasks.find(t => t.id === id);
-        if (!task) return;
-
-        if (this.auth.getToken() && Number.isInteger(id)) {
-            try {
-                const resp = await this.auth.apiRequest(`/api/tasks/${id}`, {
-                    method: 'PUT',
-                    body: JSON.stringify({ ...this._toServerTask(task), status })
-                });
-                Object.assign(task, this._mapServerTask(resp.task));
-            } catch (err) { this.auth.showNotification(err.message || 'Erro', 'error'); return; }
-        } else {
-            task.status = status;
-            task.completed = status === 'done';
-            task.completedAt = status === 'done' ? new Date().toISOString() : null;
-        }
-
-        this.renderAll();
-        this.saveData();
-    }
-
-    async deleteTask(id) {
-        if (!confirm('Excluir esta tarefa?')) return;
-
-        if (this.auth.getToken() && Number.isInteger(id)) {
-            try { await this.auth.apiRequest(`/api/tasks/${id}`, { method: 'DELETE' }); }
-            catch (err) { this.auth.showNotification(err.message || 'Erro ao excluir', 'error'); return; }
-        }
-
-        this.tasks = this.tasks.filter(t => t.id !== id);
-        if (this.pomodoroTaskId === id) this.stopPomodoro();
-        if (this.expandedTaskId === id) this.expandedTaskId = null;
-        this.renderAll();
-        this.saveData();
-        this.auth.showNotification('Tarefa excluída.', 'info');
-    }
-
-    editTask(id) {
-        this.editingTaskId = id;
-        this.renderTasks();
-        setTimeout(() => {
-            const input = document.getElementById(`task-edit-input-${id}`);
-            if (input) { input.focus(); input.select(); }
-        }, 50);
-    }
-
-    async saveEdit(id) {
-        const task = this.tasks.find(t => t.id === id);
-        if (!task) return;
-
-        const text = document.getElementById(`task-edit-input-${id}`)?.value?.trim() || task.text;
-        if (!text) return;
-
-        const priority = document.getElementById(`task-edit-priority-${id}`)?.value || task.priority;
-        const dueDate = document.getElementById(`task-edit-due-${id}`)?.value || null;
-        const notes = document.getElementById(`task-edit-notes-${id}`)?.value?.trim() || '';
-        const estimatedMinutes = parseInt(document.getElementById(`task-edit-estimate-${id}`)?.value) || 0;
-        const groupId = parseInt(document.getElementById(`task-edit-group-${id}`)?.value) || null;
-
-        if (this.auth.getToken() && Number.isInteger(id)) {
-            try {
-                const resp = await this.auth.apiRequest(`/api/tasks/${id}`, {
-                    method: 'PUT',
-                    body: JSON.stringify({ text, priority, due_date: dueDate, notes, estimated_minutes: estimatedMinutes, status: task.status, group_id: groupId })
-                });
-                Object.assign(task, this._mapServerTask(resp.task));
-            } catch (err) {
-                this.auth.showNotification(err.message || 'Erro ao salvar', 'error');
-                return;
-            }
-        } else {
-            Object.assign(task, { text, priority, dueDate, notes, estimatedMinutes, groupId });
-        }
-
-        this.editingTaskId = null;
-        this.renderAll();
-        this.saveData();
-        this.auth.showNotification('Tarefa atualizada!', 'success');
-    }
-
-    cancelEdit() { this.editingTaskId = null; this.renderTasks(); }
-
-    async clearCompleted() {
-        const completed = this.tasks.filter(t => t.completed || t.status === 'done');
-        if (completed.length === 0) return;
-        if (!confirm(`Remover ${completed.length} tarefa(s) concluída(s)?`)) return;
-
-        for (const t of completed) {
-            if (this.auth.getToken() && Number.isInteger(t.id)) {
-                try { await this.auth.apiRequest(`/api/tasks/${t.id}`, { method: 'DELETE' }); }
-                catch (e) { console.warn(e); }
-            }
-        }
-
-        this.tasks = this.tasks.filter(t => !t.completed && t.status !== 'done');
-        this.renderAll();
-        this.saveData();
-        this.auth.showNotification(`${completed.length} tarefa(s) removida(s).`, 'info');
-    }
-
-    // ===== SUBTASKS =====
-    toggleExpand(taskId) {
-        this.expandedTaskId = this.expandedTaskId === taskId ? null : taskId;
-        this.renderTasks();
-    }
-
-    async addSubtask(taskId) {
-        const input = document.getElementById(`subtask-input-${taskId}`);
-        if (!input) return;
-        const text = input.value.trim();
-        if (!text) return;
-
-        const task = this.tasks.find(t => t.id === taskId);
-        if (!task) return;
-
-        if (this.auth.getToken() && Number.isInteger(taskId)) {
-            try {
-                const resp = await this.auth.apiRequest(`/api/tasks/${taskId}/subtasks`, {
-                    method: 'POST', body: JSON.stringify({ text })
-                });
-                task.subtasks.push({ id: resp.subtask.id, text: resp.subtask.text, done: false, sortOrder: resp.subtask.sort_order || 0 });
-            } catch (e) { console.warn(e); return; }
-        } else {
-            task.subtasks.push({ id: Date.now(), text, done: false });
-        }
-
-        input.value = '';
-        this.renderTasks();
-        this.saveData();
-    }
-
-    async toggleSubtask(taskId, subtaskId) {
-        const task = this.tasks.find(t => t.id === taskId);
-        if (!task) return;
-        const sub = task.subtasks.find(s => s.id === subtaskId);
-        if (!sub) return;
-
-        if (this.auth.getToken() && Number.isInteger(subtaskId)) {
-            try {
-                const resp = await this.auth.apiRequest(`/api/subtasks/${subtaskId}/toggle`, { method: 'PATCH' });
-                sub.done = !!resp.subtask.completed;
-            } catch (e) { console.warn(e); return; }
-        } else {
-            sub.done = !sub.done;
-        }
-
-        this.renderTasks();
-        this.saveData();
-    }
-
-    async deleteSubtask(taskId, subtaskId) {
-        const task = this.tasks.find(t => t.id === taskId);
-        if (!task) return;
-
-        if (this.auth.getToken() && Number.isInteger(subtaskId)) {
-            try { await this.auth.apiRequest(`/api/subtasks/${subtaskId}`, { method: 'DELETE' }); }
-            catch (e) { console.warn(e); return; }
-        }
-
-        task.subtasks = task.subtasks.filter(s => s.id !== subtaskId);
-        this.renderTasks();
-        this.saveData();
-    }
-
-    // ===== POMODORO (focus mode — not displayed at top) =====
-    startPomodoro(taskId) {
-        if (this.pomodoroRunning) this.stopPomodoro();
-        this.pomodoroTaskId = taskId;
-        this.pomodoroTime = 25 * 60;
-        this.pomodoroRunning = true;
-        this._updatePomodoroUI();
-
-        this.pomodoroInterval = setInterval(() => {
-            this.pomodoroTime--;
-            this._updatePomodoroUI();
-            if (this.pomodoroTime <= 0) {
-                this.stopPomodoro();
-                this.auth.showNotification('Pomodoro finalizado! Hora de descansar.', 'success');
-                if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
-            }
-        }, 1000);
-        this.renderTasks();
-    }
-
-    stopPomodoro() {
-        clearInterval(this.pomodoroInterval);
-        this.pomodoroRunning = false;
-        this.pomodoroTaskId = null;
-        this.pomodoroTime = 25 * 60;
-        const bar = document.getElementById('pomodoro-bar');
-        if (bar) bar.style.display = 'none';
-    }
-
-    _updatePomodoroUI() {
-        const bar = document.getElementById('pomodoro-bar');
-        if (!bar) return;
-        bar.style.display = 'flex';
-        const mins = Math.floor(this.pomodoroTime / 60);
-        const secs = this.pomodoroTime % 60;
-        const task = this.tasks.find(t => t.id === this.pomodoroTaskId);
-        const taskName = task ? task.text : '';
-        const pct = ((25 * 60 - this.pomodoroTime) / (25 * 60)) * 100;
-        bar.innerHTML = `
-            <div class="pomo-info">
-                <i class="fas fa-clock"></i>
-                <span class="pomo-task-name">${this._esc(taskName)}</span>
-                <span class="pomo-timer">${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}</span>
-            </div>
-            <div class="pomo-progress-track"><div class="pomo-progress-fill" style="width:${pct}%"></div></div>
-            <button class="pomo-stop-btn" onclick="window.app.taskManager.stopPomodoro();window.app.taskManager.renderTasks()"><i class="fas fa-stop"></i></button>
-        `;
-    }
-
-    // ===== RENDERING =====
     renderAll() {
-        this.renderGroupsSidebar();
-        this.renderGroupSelect();
-        this.updateStats();
-        this.updateProgressBar();
-        this.updateWeeklyChart();
-        if (this.viewMode === 'kanban') this.renderKanban();
-        else if (this.viewMode === 'weekly') this.renderWeeklyPlanner();
-        else this.renderTasks();
+        this.renderStats();
+        this.renderTasks();
     }
 
-    renderGroupsSidebar() {
-        const container = document.getElementById('task-groups-list');
-        if (!container) return;
+    renderStats() {
+        const total = this.tasks.length;
+        const done = this.tasks.filter((t) => t.status === 'done' || t.completed).length;
+        const inProgress = this.tasks.filter((t) => t.status === 'in_progress').length;
+        const pending = total - done - inProgress;
 
-        const allCount = this.tasks.length;
-        const ungroupedCount = this.tasks.filter(t => !t.groupId).length;
+        const today = new Date().toISOString().split('T')[0];
+        const overdue = this.tasks.filter((t) => t.dueDate && t.dueDate < today && t.status !== 'done').length;
 
-        let html = `
-            <div class="tg-item ${this.currentGroupId === null ? 'tg-active' : ''}" onclick="window.app.taskManager.selectGroup(null)">
-                <div class="tg-item-left">
-                    <span class="tg-dot" style="background:var(--primary)"></span>
-                    <span class="tg-name">Todas</span>
-                </div>
-                <span class="tg-count">${allCount}</span>
-            </div>
-            <div class="tg-item ${this.currentGroupId === 0 ? 'tg-active' : ''}" onclick="window.app.taskManager.selectGroup(0)">
-                <div class="tg-item-left">
-                    <span class="tg-dot" style="background:#9CA3AF"></span>
-                    <span class="tg-name">Sem grupo</span>
-                </div>
-                <span class="tg-count">${ungroupedCount}</span>
-            </div>`;
-
-        this.groups.forEach(g => {
-            const count = this.tasks.filter(t => t.groupId === g.id).length;
-            html += `
-                <div class="tg-item ${this.currentGroupId === g.id ? 'tg-active' : ''}" onclick="window.app.taskManager.selectGroup(${g.id})">
-                    <div class="tg-item-left">
-                        <span class="tg-dot" style="background:${g.color || '#6366f1'}"></span>
-                        <span class="tg-name">${this._esc(g.name)}</span>
-                    </div>
-                    <div class="tg-item-right">
-                        <span class="tg-count">${count}</span>
-                        <button class="tg-action-btn" onclick="event.stopPropagation();window.app.taskManager.deleteGroup(${g.id})" title="Excluir grupo">
-                            <i class="fas fa-times"></i>
-                        </button>
-                    </div>
-                </div>`;
-        });
-
-        container.innerHTML = html;
-    }
-
-    renderGroupSelect() {
-        const selects = document.querySelectorAll('.task-group-select');
-        selects.forEach(sel => {
-            const currentVal = sel.value;
-            let opts = '<option value="">Sem grupo</option>';
-            this.groups.forEach(g => {
-                opts += `<option value="${g.id}">${this._esc(g.name)}</option>`;
-            });
-            sel.innerHTML = opts;
-            if (currentVal) sel.value = currentVal;
-        });
+        this._setEl('pm-stat-total', total);
+        this._setEl('pm-stat-pending', pending);
+        this._setEl('pm-stat-progress', inProgress);
+        this._setEl('pm-stat-done', done);
+        this._setEl('pm-stat-overdue', overdue);
     }
 
     renderTasks() {
-        const taskList = document.getElementById('task-list');
-        if (!taskList) return;
-        taskList.innerHTML = '';
+        const list = document.getElementById('pm-task-list');
+        if (!list) return;
 
-        let filtered = this._getFilteredTasks();
+        const tasks = this._getFilteredTasks();
+        this._setEl('pm-count', tasks.length);
 
-        const countBadge = document.getElementById('task-count-badge');
-        if (countBadge) countBadge.textContent = filtered.length;
-
-        if (filtered.length === 0) {
-            taskList.innerHTML = `
-                <div class="task-empty-state">
-                    <div class="task-empty-icon"><i class="fas fa-clipboard-check"></i></div>
-                    <p class="task-empty-title">${this.searchQuery ? 'Nenhuma tarefa encontrada' : 'Nenhuma tarefa neste grupo'}</p>
-                    <p class="task-empty-sub">${this.searchQuery ? 'Tente outro termo de busca' : 'Adicione sua primeira tarefa acima'}</p>
-                </div>`;
+        if (!tasks.length) {
+            list.innerHTML = `
+                <div class="pm-empty">
+                    <div class="pm-empty-icon"><i class="fas fa-clipboard-list"></i></div>
+                    <p class="pm-empty-title">Nenhuma tarefa encontrada</p>
+                    <p class="pm-empty-sub">Crie uma nova tarefa no botão "Nova Tarefa".</p>
+                </div>
+            `;
             return;
         }
 
-        // Group by group_id for visual separation when viewing "all"
-        if (this.currentGroupId === null && this.groups.length > 0) {
-            // Grouped rendering
-            const groupedMap = new Map();
-            groupedMap.set(0, []); // ungrouped
-            this.groups.forEach(g => groupedMap.set(g.id, []));
-
-            filtered.forEach(task => {
-                const gid = task.groupId || 0;
-                if (!groupedMap.has(gid)) groupedMap.set(gid, []);
-                groupedMap.get(gid).push(task);
-            });
-
-            groupedMap.forEach((tasks, gid) => {
-                if (tasks.length === 0) return;
-                const group = this.groups.find(g => g.id === gid);
-                const groupName = group ? group.name : 'Sem grupo';
-                const groupColor = group ? (group.color || '#6366f1') : '#9CA3AF';
-
-                const header = document.createElement('div');
-                header.className = 'task-group-header';
-                header.innerHTML = `<span class="task-group-dot" style="background:${groupColor}"></span><span class="task-group-label">${this._esc(groupName)}</span><span class="task-group-header-count">${tasks.length}</span>`;
-                taskList.appendChild(header);
-
-                tasks.forEach((task, index) => this._appendTaskCard(taskList, task, index));
-            });
-        } else {
-            filtered.forEach((task, index) => this._appendTaskCard(taskList, task, index));
-        }
+        list.innerHTML = tasks.map((task) => this._renderTaskCard(task)).join('');
     }
 
-    _appendTaskCard(taskList, task, index) {
-        const el = document.createElement('div');
-        if (this.editingTaskId === task.id) {
-            el.className = 'task-card task-card-editing';
-            el.innerHTML = this._renderEditForm(task);
-        } else {
-            el.className = `task-card task-status-${task.status || 'todo'} ${task.completed ? 'task-card-done' : ''} task-priority-${task.priority}`;
-            el.style.animationDelay = `${index * 0.03}s`;
-            el.setAttribute('draggable', 'true');
-            el.dataset.taskId = task.id;
-            el.innerHTML = this._renderTaskCard(task);
-            el.addEventListener('dragstart', (e) => this._onDragStart(e, task.id));
-            el.addEventListener('dragover', (e) => this._onDragOver(e));
-            el.addEventListener('drop', (e) => this._onDrop(e, task.id));
-            el.addEventListener('dragend', () => this._onDragEnd());
-        }
-        taskList.appendChild(el);
+    _renderTaskCard(task) {
+        const progress = this._calcTaskProgress(task);
+        const dueLabel = task.dueDate ? this._formatDue(task.dueDate, task.dueTime) : 'Sem prazo';
+        const cat = task.category ? `<span class="pm-badge pm-badge-category">${this._esc(task.category)}</span>` : '';
+        const tags = (task.tags || []).map((tag) => `<span class="pm-tag">#${this._esc(tag)}</span>`).join('');
+
+        const statusLabel = {
+            todo: 'A Fazer',
+            in_progress: 'Em Andamento',
+            done: 'Concluída'
+        }[task.status || 'todo'];
+
+        const priorityLabel = {
+            low: 'Baixa',
+            medium: 'Média',
+            high: 'Alta'
+        }[task.priority || 'low'];
+
+        const isExpanded = this.expandedTaskId === task.id;
+        const subtasks = task.subtasks || [];
+        const subtasksHtml = subtasks.map((s) => `
+            <label class="pm-subtask-item ${s.done ? 'done' : ''}">
+                <input type="checkbox" ${s.done ? 'checked' : ''} onchange="window.app.taskManager.toggleTaskSubtask(${task.id}, ${s.id})" />
+                <span>${this._esc(s.text)}</span>
+            </label>
+        `).join('');
+
+        return `
+            <article class="pm-task-card ${task.status === 'done' ? 'is-done' : ''}">
+                <div class="pm-task-head">
+                    <div>
+                        <h4 class="pm-task-title">${this._esc(task.text)}</h4>
+                        <div class="pm-task-meta">
+                            ${cat}
+                            <span class="pm-badge pm-badge-priority ${task.priority || 'low'}">${priorityLabel}</span>
+                            <span class="pm-badge pm-badge-status">${statusLabel}</span>
+                        </div>
+                    </div>
+                    <div class="pm-task-actions">
+                        <button class="pm-icon-btn" onclick="window.app.taskManager.toggleExpandTask(${task.id})" title="Subtarefas"><i class="fas fa-list-check"></i></button>
+                        <button class="pm-icon-btn" onclick="window.app.taskManager.openEditModal(${task.id})" title="Editar"><i class="fas fa-pen"></i></button>
+                        <button class="pm-icon-btn danger" onclick="window.app.taskManager.deleteTask(${task.id})" title="Excluir"><i class="fas fa-trash"></i></button>
+                    </div>
+                </div>
+
+                ${task.notes ? `<p class="pm-task-desc">${this._esc(task.notes)}</p>` : ''}
+
+                <div class="pm-task-foot">
+                    <span class="pm-foot-item"><i class="fas fa-calendar"></i> ${dueLabel}</span>
+                    ${task.estimatedMinutes > 0 ? `<span class="pm-foot-item"><i class="fas fa-hourglass-half"></i> ${task.estimatedMinutes} min</span>` : ''}
+                    ${task.reminderAt ? `<span class="pm-foot-item"><i class="fas fa-bell"></i> ${this._formatReminder(task.reminderAt)}</span>` : ''}
+                </div>
+
+                ${tags ? `<div class="pm-tags">${tags}</div>` : ''}
+
+                <div class="pm-progress-row">
+                    <div class="pm-progress-track"><div class="pm-progress-fill" style="width:${progress}%"></div></div>
+                    <span class="pm-progress-label">${progress}%</span>
+                </div>
+
+                ${isExpanded ? `
+                    <div class="pm-subtasks-panel">
+                        ${subtasksHtml || '<p class="pm-subtask-empty">Sem subtarefas.</p>'}
+                    </div>
+                ` : ''}
+            </article>
+        `;
     }
 
     _getFilteredTasks() {
         let filtered = [...this.tasks];
         const today = new Date().toISOString().split('T')[0];
 
-        // Group filter
-        if (this.currentGroupId !== null) {
-            if (this.currentGroupId === 0) {
-                filtered = filtered.filter(t => !t.groupId);
-            } else {
-                filtered = filtered.filter(t => t.groupId === this.currentGroupId);
-            }
-        }
+        if (this.currentFilter === 'pending') filtered = filtered.filter((t) => t.status === 'todo');
+        if (this.currentFilter === 'in_progress') filtered = filtered.filter((t) => t.status === 'in_progress');
+        if (this.currentFilter === 'done') filtered = filtered.filter((t) => t.status === 'done');
+        if (this.currentFilter === 'today') filtered = filtered.filter((t) => t.dueDate === today);
+        if (this.currentFilter === 'overdue') filtered = filtered.filter((t) => t.dueDate && t.dueDate < today && t.status !== 'done');
 
-        // Status filter
-        if (this.currentFilter === 'active') filtered = filtered.filter(t => t.status !== 'done' && !t.completed);
-        else if (this.currentFilter === 'in_progress') filtered = filtered.filter(t => t.status === 'in_progress');
-        else if (this.currentFilter === 'completed') filtered = filtered.filter(t => t.status === 'done' || t.completed);
-        else if (this.currentFilter === 'high') filtered = filtered.filter(t => t.priority === 'high');
-        else if (this.currentFilter === 'today') filtered = filtered.filter(t => t.dueDate === today);
-        else if (this.currentFilter === 'overdue') filtered = filtered.filter(t => t.dueDate && t.dueDate < today && t.status !== 'done' && !t.completed);
-
-        // Search
         if (this.searchQuery) {
-            filtered = filtered.filter(t =>
-                t.text.toLowerCase().includes(this.searchQuery) ||
-                (t.notes && t.notes.toLowerCase().includes(this.searchQuery)) ||
-                (t.tags && t.tags.some(tag => tag.toLowerCase().includes(this.searchQuery)))
-            );
+            filtered = filtered.filter((t) => {
+                const inTags = (t.tags || []).some((tag) => tag.toLowerCase().includes(this.searchQuery));
+                return (
+                    t.text.toLowerCase().includes(this.searchQuery)
+                    || (t.notes || '').toLowerCase().includes(this.searchQuery)
+                    || (t.category || '').toLowerCase().includes(this.searchQuery)
+                    || inTags
+                );
+            });
         }
 
-        // Sort
         filtered.sort((a, b) => {
             const statusOrder = { in_progress: 0, todo: 1, done: 2 };
-            const sa = statusOrder[a.status] ?? 1, sb = statusOrder[b.status] ?? 1;
-            if (sa !== sb) return sa - sb;
+            if ((statusOrder[a.status] ?? 1) !== (statusOrder[b.status] ?? 1)) {
+                return (statusOrder[a.status] ?? 1) - (statusOrder[b.status] ?? 1);
+            }
             const prio = { high: 3, medium: 2, low: 1 };
-            if (prio[b.priority] !== prio[a.priority]) return prio[b.priority] - prio[a.priority];
+            if ((prio[b.priority] ?? 1) !== (prio[a.priority] ?? 1)) {
+                return (prio[b.priority] ?? 1) - (prio[a.priority] ?? 1);
+            }
             if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
             if (a.dueDate) return -1;
             if (b.dueDate) return 1;
@@ -651,649 +214,525 @@ class TaskManager {
         return filtered;
     }
 
-    _renderTaskCard(task) {
-        const s = this._esc(task.text);
-        const prioIcons = { high: 'fa-arrow-up', medium: 'fa-minus', low: 'fa-arrow-down' };
-        const prioLabels = { high: 'Alta', medium: 'Média', low: 'Baixa' };
-        const statusIcons = { todo: 'fa-circle', in_progress: 'fa-spinner', done: 'fa-check-circle' };
+    openCreateModal() {
+        this.editingTaskId = null;
+        this.modalSubtasks = [];
+        this._fillModalForm({
+            text: '',
+            category: '',
+            notes: '',
+            priority: 'medium',
+            status: 'todo',
+            dueDate: '',
+            dueTime: '',
+            estimatedMinutes: '',
+            tags: [],
+            reminderAt: null
+        });
+        this._setEl('pm-modal-title', 'Nova Tarefa');
+        this._openModal();
+    }
 
-        // Due date badge
-        let dueBadge = '';
-        if (task.dueDate) {
-            const today = new Date().toISOString().split('T')[0];
-            const isOverdue = task.dueDate < today && task.status !== 'done';
-            const isToday = task.dueDate === today;
-            const dueClass = isOverdue ? 'task-due-overdue' : isToday ? 'task-due-today' : 'task-due-future';
-            const dueLabel = isOverdue ? 'Atrasada' : isToday ? 'Hoje' : new Date(task.dueDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
-            dueBadge = `<span class="task-due-badge ${dueClass}"><i class="fas fa-calendar-day"></i> ${dueLabel}</span>`;
+    openEditModal(id) {
+        const task = this.tasks.find((t) => t.id === id);
+        if (!task) return;
+
+        this.editingTaskId = id;
+        this.modalSubtasks = [...(task.subtasks || [])].map((s) => ({ ...s }));
+        this._fillModalForm(task);
+        this._setEl('pm-modal-title', 'Editar Tarefa');
+        this._openModal();
+    }
+
+    _fillModalForm(task) {
+        const setValue = (id, value) => {
+            const el = document.getElementById(id);
+            if (el) el.value = value || '';
+        };
+
+        setValue('pm-task-title-input', task.text || '');
+        setValue('pm-task-category-input', task.category || '');
+        setValue('pm-task-desc-input', task.notes || '');
+        setValue('pm-task-priority-input', task.priority || 'medium');
+        setValue('pm-task-status-input', task.status || 'todo');
+        setValue('pm-task-due-date-input', task.dueDate || '');
+        setValue('pm-task-due-time-input', task.dueTime || '');
+        setValue('pm-task-estimate-input', task.estimatedMinutes || '');
+        setValue('pm-task-tags-input', (task.tags || []).join(', '));
+        setValue('pm-task-reminder-input', this._toLocalDateTime(task.reminderAt));
+        setValue('pm-modal-subtask-input', '');
+
+        this.renderModalSubtasks();
+    }
+
+    _openModal() {
+        const overlay = document.getElementById('pm-task-modal-overlay');
+        if (!overlay) return;
+        overlay.style.display = 'flex';
+        document.body.classList.add('pm-modal-open');
+        setTimeout(() => document.getElementById('pm-task-title-input')?.focus(), 30);
+    }
+
+    closeTaskModal() {
+        const overlay = document.getElementById('pm-task-modal-overlay');
+        if (overlay) overlay.style.display = 'none';
+        document.body.classList.remove('pm-modal-open');
+        this.editingTaskId = null;
+        this.modalSubtasks = [];
+    }
+
+    addModalSubtask() {
+        const input = document.getElementById('pm-modal-subtask-input');
+        const text = (input?.value || '').trim();
+        if (!text) return;
+
+        this.modalSubtasks.push({ id: Date.now() + Math.floor(Math.random() * 1000), text, done: false });
+        if (input) input.value = '';
+        this.renderModalSubtasks();
+    }
+
+    toggleModalSubtask(idx) {
+        if (!this.modalSubtasks[idx]) return;
+        this.modalSubtasks[idx].done = !this.modalSubtasks[idx].done;
+        this.renderModalSubtasks();
+    }
+
+    removeModalSubtask(idx) {
+        this.modalSubtasks.splice(idx, 1);
+        this.renderModalSubtasks();
+    }
+
+    renderModalSubtasks() {
+        const container = document.getElementById('pm-modal-subtasks-list');
+        if (!container) return;
+
+        if (!this.modalSubtasks.length) {
+            container.innerHTML = '<p class="pm-modal-sub-empty">Nenhuma subtarefa adicionada.</p>';
+        } else {
+            container.innerHTML = this.modalSubtasks.map((s, idx) => `
+                <div class="pm-modal-sub-item ${s.done ? 'done' : ''}">
+                    <label>
+                        <input type="checkbox" ${s.done ? 'checked' : ''} onchange="window.app.taskManager.toggleModalSubtask(${idx})" />
+                        <span>${this._esc(s.text)}</span>
+                    </label>
+                    <button type="button" onclick="window.app.taskManager.removeModalSubtask(${idx})"><i class="fas fa-times"></i></button>
+                </div>
+            `).join('');
         }
 
-        // Estimate badge
-        let estimateBadge = '';
-        if (task.estimatedMinutes > 0) {
-            const h = Math.floor(task.estimatedMinutes / 60);
-            const m = task.estimatedMinutes % 60;
-            const label = h > 0 ? `${h}h${m > 0 ? m + 'm' : ''}` : `${m}m`;
-            estimateBadge = `<span class="task-estimate-badge"><i class="fas fa-hourglass-half"></i> ${label}</span>`;
+        const progress = this._calcSubtasksProgress(this.modalSubtasks);
+        const fill = document.getElementById('pm-modal-progress-fill');
+        const label = document.getElementById('pm-modal-progress-label');
+        if (fill) fill.style.width = `${progress}%`;
+        if (label) label.textContent = `${progress}%`;
+    }
+
+    async saveTaskFromModal() {
+        const text = (document.getElementById('pm-task-title-input')?.value || '').trim();
+        if (!text) {
+            this.auth.showNotification('Título da tarefa é obrigatório.', 'warning');
+            return;
         }
 
-        // Group badge
-        let groupBadge = '';
-        if (task.groupId) {
-            const group = this.groups.find(g => g.id === task.groupId);
-            if (group) {
-                groupBadge = `<span class="task-group-badge" style="color:${group.color}"><i class="fas fa-folder"></i> ${this._esc(group.name)}</span>`;
+        const payload = {
+            text,
+            category: (document.getElementById('pm-task-category-input')?.value || '').trim(),
+            notes: (document.getElementById('pm-task-desc-input')?.value || '').trim(),
+            priority: document.getElementById('pm-task-priority-input')?.value || 'medium',
+            status: document.getElementById('pm-task-status-input')?.value || 'todo',
+            due_date: document.getElementById('pm-task-due-date-input')?.value || null,
+            due_time: document.getElementById('pm-task-due-time-input')?.value || '',
+            estimated_minutes: parseInt(document.getElementById('pm-task-estimate-input')?.value || '0', 10) || 0,
+            tags: this._parseTags(document.getElementById('pm-task-tags-input')?.value || ''),
+            reminder_at: this._fromLocalDateTime(document.getElementById('pm-task-reminder-input')?.value || ''),
+            subtasks: this.modalSubtasks.map((s) => ({ text: s.text, done: !!s.done }))
+        };
+
+        try {
+            if (this.auth.getToken()) {
+                if (this.editingTaskId) {
+                    const resp = await this.auth.apiRequest(`/api/tasks/${this.editingTaskId}`, {
+                        method: 'PUT',
+                        body: JSON.stringify(payload)
+                    });
+                    const idx = this.tasks.findIndex((t) => t.id === this.editingTaskId);
+                    if (idx >= 0) this.tasks[idx] = this._mapServerTask(resp.task);
+                } else {
+                    const resp = await this.auth.apiRequest('/api/tasks', {
+                        method: 'POST',
+                        body: JSON.stringify(payload)
+                    });
+                    this.tasks.unshift(this._mapServerTask(resp.task));
+                }
+            } else {
+                const localTask = {
+                    id: this.editingTaskId || Date.now(),
+                    text: payload.text,
+                    category: payload.category,
+                    notes: payload.notes,
+                    priority: payload.priority,
+                    status: payload.status,
+                    dueDate: payload.due_date,
+                    dueTime: payload.due_time,
+                    estimatedMinutes: payload.estimated_minutes,
+                    tags: payload.tags,
+                    reminderAt: payload.reminder_at,
+                    completed: payload.status === 'done',
+                    subtasks: this.modalSubtasks.map((s) => ({ id: s.id, text: s.text, done: s.done })),
+                    createdAt: new Date().toISOString(),
+                    completedAt: payload.status === 'done' ? new Date().toISOString() : null
+                };
+
+                if (this.editingTaskId) {
+                    const idx = this.tasks.findIndex((t) => t.id === this.editingTaskId);
+                    if (idx >= 0) this.tasks[idx] = localTask;
+                } else {
+                    this.tasks.unshift(localTask);
+                }
+            }
+
+            this.closeTaskModal();
+            this.renderAll();
+            this.saveData();
+            this.auth.showNotification(this.editingTaskId ? 'Tarefa atualizada!' : 'Tarefa criada!', 'success');
+        } catch (err) {
+            this.auth.showNotification(err.message || 'Erro ao salvar tarefa', 'error');
+        }
+    }
+
+    async toggleTaskSubtask(taskId, subtaskId) {
+        const task = this.tasks.find((t) => t.id === taskId);
+        if (!task) return;
+
+        const sub = (task.subtasks || []).find((s) => s.id === subtaskId);
+        if (!sub) return;
+
+        sub.done = !sub.done;
+
+        if ((task.subtasks || []).length > 0) {
+            const progress = this._calcTaskProgress(task);
+            if (progress === 100) {
+                task.status = 'done';
+                task.completed = true;
+                task.completedAt = task.completedAt || new Date().toISOString();
+            } else if (progress > 0 && task.status === 'todo') {
+                task.status = 'in_progress';
+                task.completed = false;
+            } else if (progress === 0 && task.status === 'done') {
+                task.status = 'todo';
+                task.completed = false;
+                task.completedAt = null;
             }
         }
 
-        // Notes preview
-        const notesTrunc = task.notes ? `<p class="task-notes-preview"><i class="fas fa-sticky-note"></i> ${this._esc(task.notes.substring(0, 80))}${task.notes.length > 80 ? '...' : ''}</p>` : '';
-
-        // Subtasks progress
-        let subtasksHTML = '';
-        const isExpanded = this.expandedTaskId === task.id;
-        if (task.subtasks && task.subtasks.length > 0) {
-            const done = task.subtasks.filter(s => s.done).length;
-            const total = task.subtasks.length;
-            const pct = Math.round((done / total) * 100);
-            subtasksHTML = `
-                <div class="task-subtask-progress" onclick="window.app.taskManager.toggleExpand(${task.id})">
-                    <div class="task-subtask-bar"><div class="task-subtask-fill" style="width:${pct}%"></div></div>
-                    <span class="task-subtask-count">${done}/${total} <i class="fas fa-chevron-${isExpanded ? 'up' : 'down'}" style="font-size:0.65rem;margin-left:4px"></i></span>
-                </div>`;
-        }
-
-        // Expanded subtask list
-        let expandedSubtasks = '';
-        if (isExpanded) {
-            const subtasksList = (task.subtasks || []).map(sub => `
-                <div class="subtask-item ${sub.done ? 'subtask-done' : ''}">
-                    <button class="subtask-check" onclick="event.stopPropagation();window.app.taskManager.toggleSubtask(${task.id},${sub.id})">
-                        <i class="fas ${sub.done ? 'fa-check-square' : 'fa-square'}"></i>
-                    </button>
-                    <span class="subtask-text">${this._esc(sub.text)}</span>
-                    <button class="subtask-delete" onclick="event.stopPropagation();window.app.taskManager.deleteSubtask(${task.id},${sub.id})">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-            `).join('');
-
-            expandedSubtasks = `
-                <div class="task-subtask-panel">
-                    <div class="subtask-list">${subtasksList || '<p class="subtask-empty">Nenhuma subtarefa</p>'}</div>
-                    <div class="subtask-add-row">
-                        <input type="text" id="subtask-input-${task.id}" class="subtask-input" placeholder="Nova subtarefa..."
-                            onkeydown="if(event.key==='Enter'){event.preventDefault();event.stopPropagation();window.app.taskManager.addSubtask(${task.id})}" />
-                        <button class="subtask-add-btn" onclick="event.stopPropagation();window.app.taskManager.addSubtask(${task.id})"><i class="fas fa-plus"></i></button>
-                    </div>
-                </div>`;
-        }
-
-        // Status dropdown
-        const statusMenu = `
-            <div class="task-status-dropdown">
-                <button class="task-status-btn task-status-${task.status || 'todo'}" onclick="event.stopPropagation();this.nextElementSibling.classList.toggle('show')">
-                    <i class="fas ${statusIcons[task.status || 'todo']}"></i>
-                </button>
-                <div class="task-status-menu">
-                    <button onclick="window.app.taskManager.setTaskStatus(${task.id},'todo')" class="${task.status === 'todo' ? 'active' : ''}"><i class="fas fa-circle"></i> A Fazer</button>
-                    <button onclick="window.app.taskManager.setTaskStatus(${task.id},'in_progress')" class="${task.status === 'in_progress' ? 'active' : ''}"><i class="fas fa-spinner"></i> Em Andamento</button>
-                    <button onclick="window.app.taskManager.setTaskStatus(${task.id},'done')" class="${task.status === 'done' ? 'active' : ''}"><i class="fas fa-check-circle"></i> Concluída</button>
-                </div>
-            </div>`;
-
-        const isPomActive = this.pomodoroTaskId === task.id && this.pomodoroRunning;
-
-        return `
-            <div class="task-card-left">${statusMenu}</div>
-            <div class="task-card-body">
-                <div class="task-card-title ${task.status === 'done' ? 'task-title-done' : ''}">${s}</div>
-                ${notesTrunc}
-                ${subtasksHTML}
-                <div class="task-card-meta">
-                    <span class="task-prio-badge task-prio-${task.priority}" title="Prioridade: ${prioLabels[task.priority]}">
-                        <i class="fas ${prioIcons[task.priority]}"></i> ${prioLabels[task.priority]}
-                    </span>
-                    ${groupBadge}${dueBadge}${estimateBadge}
-                </div>
-                ${expandedSubtasks}
-            </div>
-            <div class="task-card-actions">
-                <button class="task-action-btn" onclick="event.stopPropagation();window.app.taskManager.toggleExpand(${task.id})" title="Subtarefas">
-                    <i class="fas fa-list-check"></i>${task.subtasks?.length ? `<span class="task-action-count">${task.subtasks.length}</span>` : ''}
-                </button>
-                <button class="task-action-btn ${isPomActive ? 'pomo-active' : ''}" onclick="event.stopPropagation();window.app.taskManager.${isPomActive ? 'stopPomodoro()' : `startPomodoro(${task.id})`};window.app.taskManager.renderTasks()" title="Pomodoro">
-                    <i class="fas ${isPomActive ? 'fa-stop' : 'fa-clock'}"></i>
-                </button>
-                <button class="task-action-btn" onclick="event.stopPropagation();window.app.taskManager.editTask(${task.id})" title="Editar">
-                    <i class="fas fa-pen"></i>
-                </button>
-                <button class="task-action-btn task-action-delete" onclick="event.stopPropagation();window.app.taskManager.deleteTask(${task.id})" title="Excluir">
-                    <i class="fas fa-trash-alt"></i>
-                </button>
-            </div>`;
-    }
-
-    _renderEditForm(task) {
-        const groupOptions = this.groups.map(g => `<option value="${g.id}" ${task.groupId === g.id ? 'selected' : ''}>${this._esc(g.name)}</option>`).join('');
-
-        return `
-            <div class="task-edit-form">
-                <input type="text" id="task-edit-input-${task.id}" class="task-edit-input" value="${this._esc(task.text)}" />
-                <div class="task-edit-fields">
-                    <select id="task-edit-priority-${task.id}" class="task-edit-select">
-                        <option value="low" ${task.priority === 'low' ? 'selected' : ''}>🟢 Baixa</option>
-                        <option value="medium" ${task.priority === 'medium' ? 'selected' : ''}>🟡 Média</option>
-                        <option value="high" ${task.priority === 'high' ? 'selected' : ''}>🔴 Alta</option>
-                    </select>
-                    <select id="task-edit-group-${task.id}" class="task-edit-select task-group-select">
-                        <option value="">Sem grupo</option>
-                        ${groupOptions}
-                    </select>
-                    <input type="date" id="task-edit-due-${task.id}" class="task-edit-date" value="${task.dueDate || ''}" />
-                    <input type="number" id="task-edit-estimate-${task.id}" class="task-edit-select" placeholder="Min." value="${task.estimatedMinutes || ''}" min="0" style="max-width:80px" />
-                </div>
-                <textarea id="task-edit-notes-${task.id}" class="task-edit-notes" rows="2" placeholder="Descrição...">${task.notes || ''}</textarea>
-                <div class="task-edit-actions">
-                    <button class="btn btn-sm btn-primary" onclick="window.app.taskManager.saveEdit(${task.id})"><i class="fas fa-check"></i> Salvar</button>
-                    <button class="btn btn-sm btn-outline" onclick="window.app.taskManager.cancelEdit()">Cancelar</button>
-                </div>
-            </div>`;
-    }
-
-    // ===== KANBAN =====
-    renderKanban() {
-        const container = document.getElementById('task-kanban-board');
-        if (!container) return;
-
-        const columns = [
-            { status: 'todo', label: 'A Fazer', icon: 'fa-circle', color: '#F59E0B' },
-            { status: 'in_progress', label: 'Em Andamento', icon: 'fa-spinner', color: '#3B82F6' },
-            { status: 'done', label: 'Concluída', icon: 'fa-check-circle', color: '#10B981' }
-        ];
-
-        let tasks = this.currentGroupId !== null
-            ? (this.currentGroupId === 0 ? this.tasks.filter(t => !t.groupId) : this.tasks.filter(t => t.groupId === this.currentGroupId))
-            : this.tasks;
-
-        container.innerHTML = columns.map(col => {
-            const colTasks = tasks.filter(t => (t.status || 'todo') === col.status);
-            const cards = colTasks.map(t => `
-                <div class="kanban-card task-priority-${t.priority}" draggable="true" data-task-id="${t.id}"
-                     ondragstart="window.app.taskManager._kanbanDragStart(event,${t.id})"
-                     ondragend="window.app.taskManager._onDragEnd()">
-                    <div class="kanban-card-title">${this._esc(t.text)}</div>
-                    <div class="kanban-card-meta">
-                        <span class="task-prio-badge task-prio-${t.priority}"><i class="fas ${t.priority === 'high' ? 'fa-arrow-up' : t.priority === 'medium' ? 'fa-minus' : 'fa-arrow-down'}"></i></span>
-                        ${t.dueDate ? `<span class="task-date-badge"><i class="fas fa-calendar"></i> ${new Date(t.dueDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}</span>` : ''}
-                        ${t.subtasks && t.subtasks.length ? `<span class="task-subtask-count">${t.subtasks.filter(s=>s.done).length}/${t.subtasks.length}</span>` : ''}
-                    </div>
-                </div>
-            `).join('');
-
-            return `
-                <div class="kanban-column" data-status="${col.status}"
-                     ondragover="event.preventDefault();this.classList.add('kanban-drag-over')"
-                     ondragleave="this.classList.remove('kanban-drag-over')"
-                     ondrop="window.app.taskManager._kanbanDrop(event,'${col.status}');this.classList.remove('kanban-drag-over')">
-                    <div class="kanban-column-header">
-                        <span class="kanban-col-title"><i class="fas ${col.icon}" style="color:${col.color}"></i> ${col.label}</span>
-                        <span class="kanban-col-count">${colTasks.length}</span>
-                    </div>
-                    <div class="kanban-cards">${cards || '<div class="kanban-empty">Nenhuma tarefa</div>'}</div>
-                </div>`;
-        }).join('');
-    }
-
-    _kanbanDragStart(e, id) {
-        this.draggedItem = id;
-        e.currentTarget.classList.add('task-dragging');
-        e.dataTransfer.effectAllowed = 'move';
-    }
-
-    _kanbanDrop(e, status) {
-        e.preventDefault();
-        if (this.draggedItem === null) return;
-        this.setTaskStatus(this.draggedItem, status);
-        this.draggedItem = null;
-    }
-
-    // ===== STATISTICS =====
-    updateStats() {
-        const scopeTasks = this.currentGroupId !== null
-            ? (this.currentGroupId === 0 ? this.tasks.filter(t => !t.groupId) : this.tasks.filter(t => t.groupId === this.currentGroupId))
-            : this.tasks;
-
-        const total = scopeTasks.length;
-        const done = scopeTasks.filter(t => t.status === 'done' || t.completed).length;
-        const inProgress = scopeTasks.filter(t => t.status === 'in_progress').length;
-        const pending = total - done - inProgress;
-        const today = new Date().toISOString().split('T')[0];
-        const overdue = scopeTasks.filter(t => t.dueDate && t.dueDate < today && t.status !== 'done' && !t.completed).length;
-
-        const el = document.getElementById('tasks-completed');
-        if (el) el.textContent = done;
-
-        this._setEl('task-stat-total', total);
-        this._setEl('task-stat-pending', pending);
-        this._setEl('task-stat-progress', inProgress);
-        this._setEl('task-stat-done', done);
-        this._setEl('task-stat-overdue', overdue);
-
-        const overdueCard = document.getElementById('task-stat-overdue')?.closest('.task-kpi-card');
-        if (overdueCard) overdueCard.classList.toggle('has-overdue', overdue > 0);
-    }
-
-    updateProgressBar() {
-        const total = this.tasks.length;
-        const completed = this.tasks.filter(t => t.status === 'done' || t.completed).length;
-        const pct = total === 0 ? 0 : Math.round((completed / total) * 100);
-        const bar = document.getElementById('task-progress-fill');
-        const label = document.getElementById('task-progress-label');
-        if (bar) bar.style.width = `${pct}%`;
-        if (label) label.textContent = `${pct}%`;
-    }
-
-    updateWeeklyChart() {
-        const chart = document.getElementById('task-weekly-chart');
-        if (!chart) return;
-
-        const days = [];
-        for (let i = 6; i >= 0; i--) {
-            const d = new Date();
-            d.setDate(d.getDate() - i);
-            days.push(d.toISOString().split('T')[0]);
-        }
-
-        const dayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-        const maxCount = Math.max(1, ...days.map(day => this.tasks.filter(t => t.completedAt && t.completedAt.split('T')[0] === day).length));
-
-        chart.innerHTML = days.map(day => {
-            const count = this.tasks.filter(t => t.completedAt && t.completedAt.split('T')[0] === day).length;
-            const pct = (count / maxCount) * 100;
-            const dayOfWeek = dayNames[new Date(day + 'T12:00:00').getDay()];
-            const isToday = day === new Date().toISOString().split('T')[0];
-            return `
-                <div class="weekly-bar-col ${isToday ? 'today' : ''}">
-                    <div class="weekly-bar-value">${count}</div>
-                    <div class="weekly-bar-track"><div class="weekly-bar-fill" style="height:${pct}%"></div></div>
-                    <div class="weekly-bar-label">${dayOfWeek}</div>
-                </div>`;
-        }).join('');
-    }
-
-    // ===== DRAG & DROP (List) =====
-    _onDragStart(e, id) {
-        this.draggedItem = id;
-        e.currentTarget.classList.add('task-dragging');
-        e.dataTransfer.effectAllowed = 'move';
-    }
-    _onDragOver(e) {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        e.currentTarget.classList.add('task-drag-over');
-    }
-    _onDrop(e, targetId) {
-        e.preventDefault();
-        e.currentTarget.classList.remove('task-drag-over');
-        if (this.draggedItem === null || this.draggedItem === targetId) return;
-        const fromIdx = this.tasks.findIndex(t => t.id === this.draggedItem);
-        const toIdx = this.tasks.findIndex(t => t.id === targetId);
-        if (fromIdx === -1 || toIdx === -1) return;
-        const [moved] = this.tasks.splice(fromIdx, 1);
-        this.tasks.splice(toIdx, 0, moved);
-        this.tasks.forEach((t, i) => t.sortOrder = i);
-        this.renderTasks();
-        this.saveData();
-        this._syncReorder();
-    }
-    _onDragEnd() {
-        this.draggedItem = null;
-        document.querySelectorAll('.task-dragging, .task-drag-over, .kanban-drag-over').forEach(el => {
-            el.classList.remove('task-dragging', 'task-drag-over', 'kanban-drag-over');
-        });
-    }
-
-    async _syncReorder() {
-        if (!this.auth.getToken()) return;
         try {
-            const order = this.tasks.map((t, i) => ({ id: t.id, sort_order: i }));
-            await this.auth.apiRequest('/api/tasks/reorder', { method: 'PATCH', body: JSON.stringify({ order }) });
-        } catch (e) { console.warn('Reorder sync failed:', e); }
+            if (this.auth.getToken() && Number.isInteger(task.id)) {
+                await this.auth.apiRequest(`/api/tasks/${task.id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(this._toServerTask(task))
+                });
+            }
+        } catch (err) {
+            console.warn('Falha ao sincronizar subtarefa:', err);
+        }
+
+        this.renderAll();
+        this.saveData();
     }
 
-    // ===== EXPANDED ADD =====
-    _toggleExpandedAdd() {
-        const expanded = document.getElementById('task-expanded-fields');
-        const icon = document.getElementById('task-expand-icon');
-        if (!expanded) return;
-        const isVisible = expanded.style.display !== 'none';
-        expanded.style.display = isVisible ? 'none' : 'flex';
-        if (icon) icon.className = isVisible ? 'fas fa-chevron-down' : 'fas fa-chevron-up';
-    }
-    _collapseExpandedAdd() {
-        const expanded = document.getElementById('task-expanded-fields');
-        const icon = document.getElementById('task-expand-icon');
-        if (expanded) expanded.style.display = 'none';
-        if (icon) icon.className = 'fas fa-chevron-down';
+    toggleExpandTask(id) {
+        this.expandedTaskId = this.expandedTaskId === id ? null : id;
+        this.renderTasks();
     }
 
-    // ===== HELPERS =====
-    _esc(str) { return window.DomusUtils ? DomusUtils.escapeHTML(str) : (str || '').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-    _setEl(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
+    async deleteTask(id) {
+        if (!confirm('Deseja excluir esta tarefa?')) return;
+
+        try {
+            if (this.auth.getToken() && Number.isInteger(id)) {
+                await this.auth.apiRequest(`/api/tasks/${id}`, { method: 'DELETE' });
+            }
+            this.tasks = this.tasks.filter((t) => t.id !== id);
+            if (this.expandedTaskId === id) this.expandedTaskId = null;
+            this.renderAll();
+            this.saveData();
+            this.auth.showNotification('Tarefa removida.', 'info');
+        } catch (err) {
+            this.auth.showNotification(err.message || 'Erro ao excluir tarefa', 'error');
+        }
+    }
+
+    _calcTaskProgress(task) {
+        return this._calcSubtasksProgress(task.subtasks || []);
+    }
+
+    _calcSubtasksProgress(subtasks) {
+        const total = subtasks.length;
+        if (!total) return 0;
+        const done = subtasks.filter((s) => s.done).length;
+        return Math.round((done / total) * 100);
+    }
+
+    _formatDue(date, time) {
+        if (!date) return 'Sem prazo';
+        const d = new Date(`${date}T12:00:00`);
+        const dateLabel = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        return time ? `${dateLabel} às ${time}` : dateLabel;
+    }
+
+    _formatReminder(iso) {
+        if (!iso) return '';
+        const d = new Date(iso);
+        return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    }
+
+    _parseTags(raw) {
+        return raw
+            .split(',')
+            .map((x) => x.trim())
+            .filter(Boolean)
+            .slice(0, 12);
+    }
+
+    _toLocalDateTime(iso) {
+        if (!iso) return '';
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return '';
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    _fromLocalDateTime(value) {
+        if (!value) return null;
+        const d = new Date(value);
+        if (Number.isNaN(d.getTime())) return null;
+        return d.toISOString();
+    }
+
+    _esc(str) {
+        return window.DomusUtils
+            ? DomusUtils.escapeHTML(str)
+            : (str || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    _setEl(id, value) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
+    }
 
     _mapServerTask(t) {
         let subtasks = [];
         if (Array.isArray(t.subtask_items) && t.subtask_items.length > 0) {
-            subtasks = t.subtask_items.map(s => ({ id: s.id, text: s.text, done: !!s.completed, sortOrder: s.sort_order || 0 }));
+            subtasks = t.subtask_items.map((s) => ({ id: s.id, text: s.text, done: !!s.completed }));
         } else {
-            try { const raw = typeof t.subtasks === 'string' ? JSON.parse(t.subtasks) : (t.subtasks || []); subtasks = raw.map(s => ({ id: s.id || Date.now(), text: s.text, done: !!s.done || !!s.completed, sortOrder: s.sort_order || 0 })); } catch(e) { subtasks = []; }
+            try {
+                const raw = typeof t.subtasks === 'string' ? JSON.parse(t.subtasks) : (t.subtasks || []);
+                subtasks = raw.map((s) => ({ id: s.id || Date.now(), text: s.text || String(s), done: !!s.done || !!s.completed }));
+            } catch {
+                subtasks = [];
+            }
         }
-        let tags = [];
-        if (typeof t.tags === 'string' && t.tags) tags = t.tags.split(',').map(x => x.trim()).filter(Boolean);
-        else if (Array.isArray(t.tags)) tags = t.tags;
+
+        const tags = typeof t.tags === 'string'
+            ? t.tags.split(',').map((x) => x.trim()).filter(Boolean)
+            : (Array.isArray(t.tags) ? t.tags : []);
 
         return {
-            id: t.id, text: t.text,
-            completed: !!(t.completed || t.status === 'done'),
-            priority: t.priority || 'low',
+            id: t.id,
+            text: t.text,
             category: t.category || '',
-            dueDate: t.due_date || null,
             notes: t.notes || '',
-            sortOrder: t.sort_order || 0,
-            status: t.status || (t.completed ? 'done' : 'todo'),
-            subtasks, tags,
+            priority: t.priority || 'low',
+            status: t.status || 'todo',
+            dueDate: t.due_date || null,
+            dueTime: t.due_time || '',
             estimatedMinutes: t.estimated_minutes || 0,
-            recurrence: t.recurrence || '',
+            reminderAt: t.reminder_at || null,
+            tags,
+            subtasks,
+            completed: !!(t.completed || t.status === 'done'),
             createdAt: t.created_at || new Date().toISOString(),
-            completedAt: t.completed_at || null,
-            lifeArea: t.life_area || '',
-            urgency: t.urgency || 1,
-            impact: t.impact || 1,
-            energy: t.energy || 1,
-            plannedDate: t.planned_date || null,
-            linkedGoalId: t.linked_goal_id || null,
-            groupId: t.group_id || null
+            completedAt: t.completed_at || null
         };
     }
 
     _toServerTask(task) {
         return {
-            text: task.text, priority: task.priority, category: task.category,
-            due_date: task.dueDate, notes: task.notes, status: task.status,
-            subtasks: task.subtasks, tags: task.tags,
-            estimated_minutes: task.estimatedMinutes, recurrence: task.recurrence,
-            life_area: task.lifeArea, urgency: task.urgency, impact: task.impact,
-            energy: task.energy, planned_date: task.plannedDate, linked_goal_id: task.linkedGoalId,
-            group_id: task.groupId
+            text: task.text,
+            category: task.category || '',
+            notes: task.notes || '',
+            priority: task.priority || 'medium',
+            status: task.status || 'todo',
+            due_date: task.dueDate || null,
+            due_time: task.dueTime || '',
+            estimated_minutes: task.estimatedMinutes || 0,
+            reminder_at: task.reminderAt || null,
+            tags: task.tags || [],
+            subtasks: (task.subtasks || []).map((s) => ({ text: s.text, done: !!s.done }))
         };
     }
 
     async loadServerData() {
         if (!this.auth.getToken()) return;
+
         try {
-            await this.loadGroups();
             const resp = await this.auth.apiRequest('/api/tasks', { method: 'GET' });
             if (resp && Array.isArray(resp.tasks)) {
-                this.tasks = resp.tasks.map(t => this._mapServerTask(t));
+                this.tasks = resp.tasks.map((t) => this._mapServerTask(t));
                 this.renderAll();
             }
-        } catch (err) { console.warn('Erro ao carregar tarefas:', err); }
+        } catch (err) {
+            console.warn('Erro ao carregar tarefas:', err);
+        }
     }
 
     saveData() {
-        try { localStorage.setItem(this.auth.getStorageKey('tasks'), JSON.stringify({ tasks: this.tasks, groups: this.groups })); }
-        catch (e) { console.warn('Falha ao salvar tarefas:', e); }
+        try {
+            localStorage.setItem(this.auth.getStorageKey('tasks'), JSON.stringify({ tasks: this.tasks }));
+        } catch (e) {
+            console.warn('Falha ao salvar tarefas:', e);
+        }
     }
 
     loadData() {
         try {
             const raw = localStorage.getItem(this.auth.getStorageKey('tasks'));
-            if (raw) {
-                const parsed = JSON.parse(raw);
-                if (parsed.tasks && Array.isArray(parsed.tasks)) this.tasks = parsed.tasks;
-                if (parsed.groups && Array.isArray(parsed.groups)) this.groups = parsed.groups;
-            }
-        } catch (e) { console.warn('Erro localStorage tarefas:', e); }
-    }
-
-    // ===== WEEKLY PLANNER =====
-    _getMondayOfWeek(date) {
-        const d = new Date(date);
-        const day = d.getDay();
-        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-        d.setDate(diff);
-        d.setHours(0, 0, 0, 0);
-        return d;
-    }
-
-    renderWeeklyPlanner() {
-        const container = document.getElementById('task-weekly-planner');
-        const titleEl = document.getElementById('weekly-planner-title');
-        if (!container) return;
-
-        const monday = new Date(this.weeklyViewDate);
-        const sunday = new Date(monday);
-        sunday.setDate(sunday.getDate() + 6);
-
-        const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-        if (titleEl) titleEl.textContent = `${monday.getDate()} ${monthNames[monday.getMonth()]} - ${sunday.getDate()} ${monthNames[sunday.getMonth()]} ${sunday.getFullYear()}`;
-
-        const dayNames = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB', 'DOM'];
-        const todayStr = new Date().toISOString().split('T')[0];
-
-        let html = '';
-        for (let i = 0; i < 7; i++) {
-            const d = new Date(monday);
-            d.setDate(d.getDate() + i);
-            const dateStr = d.toISOString().split('T')[0];
-            const isToday = dateStr === todayStr;
-
-            const dayTasks = this.tasks.filter(t => {
-                if (t.status === 'done') return false;
-                return (t.plannedDate === dateStr) || (t.dueDate === dateStr && !t.plannedDate);
-            });
-
-            const taskCards = dayTasks.map(t => {
-                const group = this.groups.find(g => g.id === t.groupId);
-                const borderColor = group ? group.color : '#9CA3AF';
-                return `<div class="weekly-task-card task-priority-${t.priority}" style="border-left:3px solid ${borderColor}" onclick="window.app.taskManager.editTask(${t.id})">
-                    <span class="weekly-task-text">${this._esc(t.text)}</span>
-                </div>`;
-            }).join('');
-
-            html += `
-                <div class="weekly-day-col ${isToday ? 'weekly-today' : ''}">
-                    <div class="weekly-day-header">
-                        <span class="weekly-day-name">${dayNames[i]}</span>
-                        <span class="weekly-day-date">${d.getDate()}</span>
-                    </div>
-                    <div class="weekly-day-tasks" data-date="${dateStr}"
-                         ondragover="event.preventDefault();this.classList.add('weekly-drop-target')"
-                         ondragleave="this.classList.remove('weekly-drop-target')"
-                         ondrop="window.app.taskManager._weeklyDrop(event,'${dateStr}');this.classList.remove('weekly-drop-target')">
-                        ${taskCards || '<div class="weekly-empty">—</div>'}
-                    </div>
-                </div>`;
+            if (!raw) return;
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed.tasks)) this.tasks = parsed.tasks;
+        } catch (e) {
+            console.warn('Erro localStorage tarefas:', e);
         }
-
-        container.innerHTML = html;
     }
 
-    async _weeklyDrop(e, dateStr) {
-        e.preventDefault();
-        if (this.draggedItem === null) return;
-        const task = this.tasks.find(t => t.id === this.draggedItem);
-        if (!task) return;
-        task.plannedDate = dateStr;
-        if (this.auth.getToken() && Number.isInteger(task.id)) {
-            try {
-                await this.auth.apiRequest(`/api/tasks/${task.id}`, {
-                    method: 'PUT',
-                    body: JSON.stringify({ ...this._toServerTask(task), planned_date: dateStr })
-                });
-            } catch (err) { console.warn('Erro ao atualizar data planejada:', err); }
-        }
-        this.saveData();
-        this.renderWeeklyPlanner();
-        this.draggedItem = null;
-    }
-
-    // ===== TEMPLATE =====
     static getTemplate() {
         return `
-        <div class="task-module task-module-v3">
-            <!-- Pomodoro Bar (hidden by default — only shown when active) -->
-            <div class="pomodoro-bar" id="pomodoro-bar" style="display:none"></div>
+        <div class="pm-module">
+            <div class="pm-topbar">
+                <div>
+                    <h3 class="pm-title"><i class="fas fa-list-check"></i> Tarefas</h3>
+                    <p class="pm-subtitle">Organização profissional com progresso automático por subtarefas</p>
+                </div>
+                <button id="pm-new-task-btn" class="pm-primary-btn"><i class="fas fa-plus"></i> Nova Tarefa</button>
+            </div>
 
-            <!-- KPIs -->
-            <div class="task-kpi-grid">
-                <div class="task-kpi-card">
-                    <div class="task-kpi-icon task-kpi-total"><i class="fas fa-layer-group"></i></div>
-                    <div class="task-kpi-info">
-                        <span class="task-kpi-value" id="task-stat-total">0</span>
-                        <span class="task-kpi-label">Total</span>
-                    </div>
+            <div class="pm-kpis">
+                <div class="pm-kpi-card"><span>Total</span><strong id="pm-stat-total">0</strong></div>
+                <div class="pm-kpi-card"><span>Pendentes</span><strong id="pm-stat-pending">0</strong></div>
+                <div class="pm-kpi-card"><span>Em andamento</span><strong id="pm-stat-progress">0</strong></div>
+                <div class="pm-kpi-card"><span>Concluídas</span><strong id="pm-stat-done">0</strong></div>
+                <div class="pm-kpi-card"><span>Atrasadas</span><strong id="pm-stat-overdue">0</strong></div>
+            </div>
+
+            <div class="pm-toolbar">
+                <div class="pm-search-wrap">
+                    <i class="fas fa-search"></i>
+                    <input id="pm-search" type="text" placeholder="Buscar por título, categoria, descrição ou tag..." />
                 </div>
-                <div class="task-kpi-card">
-                    <div class="task-kpi-icon task-kpi-pending"><i class="fas fa-clock"></i></div>
-                    <div class="task-kpi-info">
-                        <span class="task-kpi-value" id="task-stat-pending">0</span>
-                        <span class="task-kpi-label">Pendentes</span>
-                    </div>
-                </div>
-                <div class="task-kpi-card">
-                    <div class="task-kpi-icon" style="background:rgba(59,130,246,0.1);color:#3B82F6"><i class="fas fa-spinner"></i></div>
-                    <div class="task-kpi-info">
-                        <span class="task-kpi-value" id="task-stat-progress">0</span>
-                        <span class="task-kpi-label">Em Andamento</span>
-                    </div>
-                </div>
-                <div class="task-kpi-card">
-                    <div class="task-kpi-icon task-kpi-done"><i class="fas fa-check-double"></i></div>
-                    <div class="task-kpi-info">
-                        <span class="task-kpi-value" id="task-stat-done">0</span>
-                        <span class="task-kpi-label">Concluídas</span>
-                    </div>
-                </div>
-                <div class="task-kpi-card">
-                    <div class="task-kpi-icon task-kpi-overdue"><i class="fas fa-exclamation-triangle"></i></div>
-                    <div class="task-kpi-info">
-                        <span class="task-kpi-value" id="task-stat-overdue">0</span>
-                        <span class="task-kpi-label">Atrasadas</span>
-                    </div>
+                <div class="pm-filters">
+                    <button class="pm-filter-chip active" data-filter="all">Todas <span id="pm-count">0</span></button>
+                    <button class="pm-filter-chip" data-filter="pending">Pendentes</button>
+                    <button class="pm-filter-chip" data-filter="in_progress">Em andamento</button>
+                    <button class="pm-filter-chip" data-filter="done">Concluídas</button>
+                    <button class="pm-filter-chip" data-filter="today">Hoje</button>
+                    <button class="pm-filter-chip" data-filter="overdue">Atrasadas</button>
                 </div>
             </div>
 
-            <!-- Progress + Weekly Chart Row -->
-            <div class="task-insights-row">
-                <div class="task-progress-container">
-                    <div class="task-progress-header">
-                        <span class="task-progress-title"><i class="fas fa-chart-line"></i> Progresso</span>
-                        <span class="task-progress-pct" id="task-progress-label">0%</span>
-                    </div>
-                    <div class="task-progress-track">
-                        <div class="task-progress-fill" id="task-progress-fill"></div>
-                    </div>
-                </div>
-                <div class="task-weekly-container">
-                    <div class="task-weekly-header">
-                        <span class="task-weekly-title"><i class="fas fa-calendar-week"></i> Semana</span>
-                    </div>
-                    <div class="task-weekly-chart" id="task-weekly-chart"></div>
-                </div>
-            </div>
+            <div id="pm-task-list" class="pm-task-list"></div>
 
-            <!-- Main layout: Group sidebar + Task list -->
-            <div class="task-layout">
-
-                <!-- Groups Sidebar -->
-                <aside class="task-groups-sidebar">
-                    <div class="tg-header">
-                        <span class="tg-header-title"><i class="fas fa-folder-open"></i> Grupos</span>
-                        <button class="tg-add-btn" id="task-add-group-btn" title="Novo grupo"><i class="fas fa-plus"></i></button>
+            <div id="pm-task-modal-overlay" class="pm-modal-overlay" style="display:none;">
+                <div class="pm-modal">
+                    <div class="pm-modal-header">
+                        <h4 id="pm-modal-title">Nova Tarefa</h4>
+                        <button type="button" id="pm-modal-close" class="pm-icon-btn"><i class="fas fa-times"></i></button>
                     </div>
-                    <div id="task-group-form-area"></div>
-                    <div id="task-groups-list" class="tg-list"></div>
-                </aside>
 
-                <!-- Main task area -->
-                <div class="task-main-area">
-                    <!-- Add task -->
-                    <div class="task-add-card">
-                        <form id="task-quick-add-form" class="task-add-form" autocomplete="off">
-                            <div class="task-add-main-row">
-                                <div class="task-add-input-wrap">
-                                    <i class="fas fa-plus-circle task-add-icon"></i>
-                                    <input type="text" id="task-add-text" class="task-add-input" placeholder="Adicionar nova tarefa..." required />
-                                </div>
-                                <select id="task-add-priority" class="task-add-priority" title="Prioridade">
-                                    <option value="low">🟢 Baixa</option>
-                                    <option value="medium">🟡 Média</option>
-                                    <option value="high">🔴 Alta</option>
+                    <form id="pm-task-form" class="pm-modal-form" autocomplete="off">
+                        <div class="pm-grid-2">
+                            <label class="pm-field pm-field-full">
+                                <span>Título da tarefa *</span>
+                                <input id="pm-task-title-input" type="text" maxlength="500" required />
+                            </label>
+
+                            <label class="pm-field">
+                                <span>Categoria</span>
+                                <input id="pm-task-category-input" type="text" maxlength="60" placeholder="Ex.: Trabalho" />
+                            </label>
+
+                            <label class="pm-field">
+                                <span>Status</span>
+                                <select id="pm-task-status-input">
+                                    <option value="todo">A Fazer</option>
+                                    <option value="in_progress">Em Andamento</option>
+                                    <option value="done">Concluída</option>
                                 </select>
-                                <button type="button" class="task-expand-btn" id="task-expand-add" title="Mais opções">
-                                    <i class="fas fa-chevron-down" id="task-expand-icon"></i>
-                                </button>
-                                <button type="submit" class="task-submit-btn" title="Adicionar">
-                                    <i class="fas fa-paper-plane"></i>
-                                </button>
-                            </div>
-                            <div class="task-add-expanded" id="task-expanded-fields" style="display:none">
-                                <select id="task-add-group" class="task-add-select task-group-select" title="Grupo">
-                                    <option value="">Sem grupo</option>
+                            </label>
+
+                            <label class="pm-field">
+                                <span>Prioridade</span>
+                                <select id="pm-task-priority-input">
+                                    <option value="low">Baixa</option>
+                                    <option value="medium">Média</option>
+                                    <option value="high">Alta</option>
                                 </select>
-                                <input type="date" id="task-add-due" class="task-add-date" title="Prazo" />
-                                <input type="number" id="task-add-estimate" class="task-add-select" placeholder="Minutos" min="0" title="Tempo estimado" style="max-width:90px" />
-                                <textarea id="task-add-description" class="task-add-notes" rows="2" placeholder="Descrição (opcional)..."></textarea>
+                            </label>
+
+                            <label class="pm-field">
+                                <span>Data de vencimento</span>
+                                <input id="pm-task-due-date-input" type="date" />
+                            </label>
+
+                            <label class="pm-field">
+                                <span>Hora</span>
+                                <input id="pm-task-due-time-input" type="time" />
+                            </label>
+
+                            <label class="pm-field">
+                                <span>Tempo estimado (min)</span>
+                                <input id="pm-task-estimate-input" type="number" min="0" max="9999" />
+                            </label>
+
+                            <label class="pm-field">
+                                <span>Definir lembrete</span>
+                                <input id="pm-task-reminder-input" type="datetime-local" />
+                            </label>
+
+                            <label class="pm-field pm-field-full">
+                                <span>Tags (separadas por vírgula)</span>
+                                <input id="pm-task-tags-input" type="text" placeholder="cliente, sprint, urgente" />
+                            </label>
+
+                            <label class="pm-field pm-field-full">
+                                <span>Descrição</span>
+                                <textarea id="pm-task-desc-input" rows="3" maxlength="2000" placeholder="Detalhes da tarefa..."></textarea>
+                            </label>
+                        </div>
+
+                        <div class="pm-modal-progress">
+                            <div class="pm-modal-progress-head">
+                                <span>Progresso (subtarefas)</span>
+                                <strong id="pm-modal-progress-label">0%</strong>
                             </div>
-                        </form>
-                    </div>
-
-                    <!-- Toolbar -->
-                    <div class="task-toolbar">
-                        <div class="task-search-wrap">
-                            <i class="fas fa-search task-search-icon"></i>
-                            <input type="text" id="task-search-input" class="task-search-input" placeholder="Buscar tarefas..." />
+                            <div class="pm-progress-track"><div id="pm-modal-progress-fill" class="pm-progress-fill" style="width:0%"></div></div>
                         </div>
-                        <div class="task-view-toggle">
-                            <button class="task-view-btn active" id="task-view-list" title="Lista"><i class="fas fa-list"></i></button>
-                            <button class="task-view-btn" id="task-view-kanban" title="Kanban"><i class="fas fa-columns"></i></button>
-                            <button class="task-view-btn" id="task-view-weekly" title="Semanal"><i class="fas fa-calendar-week"></i></button>
-                        </div>
-                        <div class="task-filters-wrap">
-                            <button class="task-filter-chip active" data-filter="all">Todas <span class="task-chip-count" id="task-count-badge">0</span></button>
-                            <button class="task-filter-chip" data-filter="active">Pendentes</button>
-                            <button class="task-filter-chip" data-filter="in_progress">Em Andamento</button>
-                            <button class="task-filter-chip" data-filter="completed">Concluídas</button>
-                            <button class="task-filter-chip" data-filter="today">Hoje</button>
-                            <button class="task-filter-chip" data-filter="overdue">Atrasadas</button>
-                            <button class="task-filter-chip" data-filter="high">🔴 Alta</button>
-                        </div>
-                        <button class="task-clear-btn" id="task-clear-completed" title="Limpar concluídas">
-                            <i class="fas fa-broom"></i> Limpar
-                        </button>
-                    </div>
 
-                    <!-- List View -->
-                    <div id="task-list-container">
-                        <div id="task-list" class="task-list"></div>
-                    </div>
-
-                    <!-- Kanban View -->
-                    <div id="task-kanban-container" class="hidden">
-                        <div id="task-kanban-board" class="kanban-board"></div>
-                    </div>
-
-                    <!-- Weekly Planner View -->
-                    <div id="task-weekly-container" class="hidden">
-                        <div class="weekly-planner-nav">
-                            <button class="btn btn-sm btn-outline" id="weekly-prev"><i class="fas fa-chevron-left"></i></button>
-                            <span class="weekly-planner-title" id="weekly-planner-title">Semana</span>
-                            <button class="btn btn-sm btn-outline" id="weekly-next"><i class="fas fa-chevron-right"></i></button>
+                        <div class="pm-modal-subtasks">
+                            <div class="pm-modal-subtasks-head">
+                                <span>Subtarefas</span>
+                            </div>
+                            <div class="pm-modal-subtasks-add">
+                                <input id="pm-modal-subtask-input" type="text" placeholder="Adicionar subtarefa..." />
+                                <button type="button" id="pm-modal-add-subtask" class="pm-secondary-btn"><i class="fas fa-plus"></i> Adicionar</button>
+                            </div>
+                            <div id="pm-modal-subtasks-list" class="pm-modal-subtasks-list"></div>
                         </div>
-                        <div id="task-weekly-planner" class="weekly-planner-grid"></div>
-                    </div>
+
+                        <div class="pm-modal-actions">
+                            <button type="button" id="pm-modal-cancel" class="pm-secondary-btn">Cancelar</button>
+                            <button type="submit" class="pm-primary-btn">Salvar tarefa</button>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>

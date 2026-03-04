@@ -89,6 +89,8 @@ async function init() {
         priority VARCHAR(20) DEFAULT 'low',
         category VARCHAR(60) DEFAULT '',
         due_date DATE,
+        due_time VARCHAR(5) DEFAULT '',
+        reminder_at TIMESTAMPTZ,
         notes TEXT DEFAULT '',
         sort_order INTEGER DEFAULT 0,
         created_at TIMESTAMPTZ DEFAULT NOW()
@@ -105,6 +107,18 @@ async function init() {
     await client.query(`
       DO $$ BEGIN
         ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_date DATE;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_time VARCHAR(5) DEFAULT '';
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminder_at TIMESTAMPTZ;
       EXCEPTION WHEN OTHERS THEN NULL;
       END $$;
     `);
