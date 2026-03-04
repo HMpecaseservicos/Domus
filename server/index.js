@@ -260,6 +260,13 @@ const validateTask = [
     .optional()
     .isInt({ min: 0, max: 9999 })
     .toInt(),
+  body('life_area')
+    .optional()
+    .isIn(['', 'trabalho', 'financas', 'saude', 'espiritual', 'familia', 'estudos', 'projetos'])
+    .withMessage('Área de vida inválida'),
+  body('urgency').optional().isInt({ min: 1, max: 5 }).toInt(),
+  body('impact').optional().isInt({ min: 1, max: 5 }).toInt(),
+  body('energy').optional().isInt({ min: 1, max: 5 }).toInt(),
 ];
 
 const validateThought = [
@@ -420,12 +427,12 @@ app.patch('/api/tasks/reorder', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/tasks', authMiddleware, validateTask, handleValidationErrors, async (req, res) => {
-  const { text, priority, category, due_date, notes, status, subtasks, tags, estimated_minutes, recurrence } = req.body;
+  const { text, priority, category, due_date, notes, status, subtasks, tags, estimated_minutes, recurrence, life_area, urgency, impact, energy, planned_date, linked_goal_id } = req.body;
   try {
     const tagsStr = Array.isArray(tags) ? tags.join(',') : (tags || '');
     const result = await run(
-      'INSERT INTO tasks (user_id, text, priority, category, due_date, notes, status, tags, estimated_minutes, recurrence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
-      [req.user.id, text, priority || 'low', category || '', due_date || null, notes || '', status || 'todo', tagsStr, estimated_minutes || 0, recurrence || '']
+      'INSERT INTO tasks (user_id, text, priority, category, due_date, notes, status, tags, estimated_minutes, recurrence, life_area, urgency, impact, energy, planned_date, linked_goal_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
+      [req.user.id, text, priority || 'low', category || '', due_date || null, notes || '', status || 'todo', tagsStr, estimated_minutes || 0, recurrence || '', life_area || '', urgency || 1, impact || 1, energy || 1, planned_date || null, linked_goal_id || null]
     );
     const taskId = result.lastID;
     // Insert subtasks into task_subtasks table
@@ -494,10 +501,10 @@ app.get('/api/thoughts', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/thoughts', authMiddleware, validateThought, handleValidationErrors, async (req, res) => {
-  const { text, mood, tags } = req.body;
+  const { text, mood, tags, energy, stress, clarity } = req.body;
   try {
     const tagsStr = Array.isArray(tags) ? tags.join(',') : (tags || '');
-    const result = await run('INSERT INTO thoughts (user_id, text, mood, tags) VALUES (?, ?, ?, ?) RETURNING id', [req.user.id, text, mood || null, tagsStr]);
+    const result = await run('INSERT INTO thoughts (user_id, text, mood, tags, energy, stress, clarity) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id', [req.user.id, text, mood || null, tagsStr, energy || 0, stress || 0, clarity || 0]);
     const thought = await get('SELECT * FROM thoughts WHERE id = ?', [result.lastID]);
     res.json({ thought });
   } catch (err) {
@@ -517,9 +524,9 @@ app.get('/api/gratitude', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/gratitude', authMiddleware, validateGratitude, handleValidationErrors, async (req, res) => {
-  const { text } = req.body;
+  const { text, type } = req.body;
   try {
-    const result = await run('INSERT INTO gratitude (user_id, text) VALUES (?, ?) RETURNING id', [req.user.id, text]);
+    const result = await run('INSERT INTO gratitude (user_id, text, type) VALUES (?, ?, ?) RETURNING id', [req.user.id, text, type || 'geral']);
     const item = await get('SELECT * FROM gratitude WHERE id = ?', [result.lastID]);
     res.json({ item });
   } catch (err) {
@@ -605,7 +612,7 @@ app.delete('/api/finances/:id', authMiddleware, validateId, handleValidationErro
 // PUT endpoints for editing
 app.put('/api/tasks/:id', authMiddleware, validateId, validateTask, handleValidationErrors, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { text, priority, category, due_date, notes, sort_order, status, subtasks, tags, estimated_minutes, recurrence } = req.body;
+  const { text, priority, category, due_date, notes, sort_order, status, subtasks, tags, estimated_minutes, recurrence, life_area, urgency, impact, energy, planned_date, linked_goal_id } = req.body;
   try {
     const task = await get('SELECT * FROM tasks WHERE id = ? AND user_id = ?', [id, req.user.id]);
     if (!task) return res.status(404).json({ message: 'Not found' });
@@ -614,8 +621,8 @@ app.put('/api/tasks/:id', authMiddleware, validateId, validateTask, handleValida
     const newCompleted = newStatus === 'done';
     const completedAt = newStatus === 'done' && task.status !== 'done' ? new Date().toISOString() : (newStatus !== 'done' ? null : task.completed_at);
     await run(
-      'UPDATE tasks SET text = ?, priority = ?, category = ?, due_date = ?, notes = ?, sort_order = ?, status = ?, completed = ?, tags = ?, estimated_minutes = ?, recurrence = ?, completed_at = ? WHERE id = ?',
-      [text, priority || task.priority, category ?? task.category, due_date ?? task.due_date, notes ?? task.notes, sort_order ?? task.sort_order, newStatus, newCompleted, tagsStr, estimated_minutes ?? task.estimated_minutes ?? 0, recurrence ?? task.recurrence ?? '', completedAt, id]
+      'UPDATE tasks SET text = ?, priority = ?, category = ?, due_date = ?, notes = ?, sort_order = ?, status = ?, completed = ?, tags = ?, estimated_minutes = ?, recurrence = ?, completed_at = ?, life_area = ?, urgency = ?, impact = ?, energy = ?, planned_date = ?, linked_goal_id = ? WHERE id = ?',
+      [text, priority || task.priority, category ?? task.category, due_date ?? task.due_date, notes ?? task.notes, sort_order ?? task.sort_order, newStatus, newCompleted, tagsStr, estimated_minutes ?? task.estimated_minutes ?? 0, recurrence ?? task.recurrence ?? '', completedAt, life_area ?? task.life_area ?? '', urgency ?? task.urgency ?? 1, impact ?? task.impact ?? 1, energy ?? task.energy ?? 1, planned_date ?? task.planned_date, linked_goal_id ?? task.linked_goal_id, id]
     );
     // Sync subtasks if provided
     if (subtasks !== undefined && Array.isArray(subtasks)) {
@@ -668,16 +675,17 @@ app.put('/api/purpose', authMiddleware, [
   body('mission').optional().isLength({ max: 2000 }).trim(),
   body('goals').optional().isLength({ max: 2000 }).trim(),
   body('values').optional().isLength({ max: 1000 }).trim(),
+  body('vision').optional().isLength({ max: 2000 }).trim(),
 ], handleValidationErrors, async (req, res) => {
-  const { mission, goals, values } = req.body;
+  const { mission, goals, values, vision } = req.body;
   try {
     const existing = await get('SELECT * FROM purpose WHERE user_id = ?', [req.user.id]);
     if (existing) {
-      await run('UPDATE purpose SET mission = ?, goals = ?, "values" = ?, updated_at = NOW() WHERE user_id = ?',
-        [mission || '', goals || '', values || '', req.user.id]);
+      await run('UPDATE purpose SET mission = ?, goals = ?, "values" = ?, vision = ?, updated_at = NOW() WHERE user_id = ?',
+        [mission || '', goals || '', values || '', vision || '', req.user.id]);
     } else {
-      await run('INSERT INTO purpose (user_id, mission, goals, "values") VALUES (?, ?, ?, ?) RETURNING id',
-        [req.user.id, mission || '', goals || '', values || '']);
+      await run('INSERT INTO purpose (user_id, mission, goals, "values", vision) VALUES (?, ?, ?, ?, ?) RETURNING id',
+        [req.user.id, mission || '', goals || '', values || '', vision || '']);
     }
     const updated = await get('SELECT * FROM purpose WHERE user_id = ?', [req.user.id]);
     res.json({ purpose: updated });
@@ -909,6 +917,216 @@ app.delete('/api/subtasks/:id', authMiddleware, validateId, handleValidationErro
     if (!sub || sub.user_id !== req.user.id) return res.status(404).json({ message: 'Not found' });
     await run('DELETE FROM task_subtasks WHERE id = ?', [id]);
     res.json({ message: 'Deleted' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// ===== BUDGETS CRUD =====
+app.get('/api/budgets', authMiddleware, async (req, res) => {
+  try {
+    const { month, year } = req.query;
+    let sql = 'SELECT * FROM budgets WHERE user_id = ?';
+    const params = [req.user.id];
+    if (month && year) {
+      sql += ' AND month = ? AND year = ?';
+      params.push(parseInt(month), parseInt(year));
+    }
+    sql += ' ORDER BY category ASC';
+    const rows = await all(sql, params);
+    res.json({ budgets: rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.post('/api/budgets', authMiddleware, [
+  body('category').isLength({ min: 1, max: 100 }).trim().escape(),
+  body('amount').isFloat({ min: 0 }).toFloat(),
+  body('month').isInt({ min: 1, max: 12 }).toInt(),
+  body('year').isInt({ min: 2020, max: 2100 }).toInt(),
+], handleValidationErrors, async (req, res) => {
+  const { category, amount, month, year } = req.body;
+  try {
+    const existing = await get('SELECT * FROM budgets WHERE user_id = ? AND category = ? AND month = ? AND year = ?', [req.user.id, category, month, year]);
+    if (existing) {
+      await run('UPDATE budgets SET amount = ? WHERE id = ?', [amount, existing.id]);
+      const updated = await get('SELECT * FROM budgets WHERE id = ?', [existing.id]);
+      return res.json({ budget: updated });
+    }
+    const result = await run('INSERT INTO budgets (user_id, category, amount, month, year) VALUES (?, ?, ?, ?, ?) RETURNING id',
+      [req.user.id, category, amount, month, year]);
+    const budget = await get('SELECT * FROM budgets WHERE id = ?', [result.lastID]);
+    res.json({ budget });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.delete('/api/budgets/:id', authMiddleware, validateId, handleValidationErrors, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  try {
+    const item = await get('SELECT * FROM budgets WHERE id = ? AND user_id = ?', [id, req.user.id]);
+    if (!item) return res.status(404).json({ message: 'Not found' });
+    await run('DELETE FROM budgets WHERE id = ?', [id]);
+    res.json({ message: 'Deleted' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// ===== GOALS CRUD =====
+app.get('/api/goals', authMiddleware, async (req, res) => {
+  try {
+    const goals = await all('SELECT * FROM goals WHERE user_id = ? ORDER BY created_at DESC', [req.user.id]);
+    res.json({ goals });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.post('/api/goals', authMiddleware, [
+  body('title').isLength({ min: 1, max: 300 }).trim().escape(),
+  body('description').optional().isLength({ max: 2000 }).trim(),
+  body('life_area').optional().isLength({ max: 30 }).trim().escape(),
+  body('progress').optional().isInt({ min: 0, max: 100 }).toInt(),
+], handleValidationErrors, async (req, res) => {
+  const { title, description, life_area, target_date, progress } = req.body;
+  try {
+    const result = await run('INSERT INTO goals (user_id, title, description, life_area, target_date, progress) VALUES (?, ?, ?, ?, ?, ?) RETURNING id',
+      [req.user.id, title, description || '', life_area || '', target_date || null, progress || 0]);
+    const goal = await get('SELECT * FROM goals WHERE id = ?', [result.lastID]);
+    res.json({ goal });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.put('/api/goals/:id', authMiddleware, validateId, [
+  body('title').optional().isLength({ min: 1, max: 300 }).trim().escape(),
+  body('progress').optional().isInt({ min: 0, max: 100 }).toInt(),
+  body('status').optional().isIn(['active', 'completed', 'paused']),
+], handleValidationErrors, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { title, description, life_area, target_date, progress, status } = req.body;
+  try {
+    const goal = await get('SELECT * FROM goals WHERE id = ? AND user_id = ?', [id, req.user.id]);
+    if (!goal) return res.status(404).json({ message: 'Not found' });
+    await run('UPDATE goals SET title = ?, description = ?, life_area = ?, target_date = ?, progress = ?, status = ? WHERE id = ?',
+      [title || goal.title, description ?? goal.description, life_area ?? goal.life_area, target_date ?? goal.target_date, progress ?? goal.progress, status || goal.status, id]);
+    const updated = await get('SELECT * FROM goals WHERE id = ?', [id]);
+    res.json({ goal: updated });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.delete('/api/goals/:id', authMiddleware, validateId, handleValidationErrors, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  try {
+    const goal = await get('SELECT * FROM goals WHERE id = ? AND user_id = ?', [id, req.user.id]);
+    if (!goal) return res.status(404).json({ message: 'Not found' });
+    await run('DELETE FROM goals WHERE id = ?', [id]);
+    res.json({ message: 'Deleted' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// ===== ANALYTICS ENDPOINT =====
+app.get('/api/analytics', authMiddleware, async (req, res) => {
+  try {
+    // Productivity analytics
+    const totalTasks = await get('SELECT COUNT(*) as count FROM tasks WHERE user_id = ?', [req.user.id]);
+    const completedTasks = await get('SELECT COUNT(*) as count FROM tasks WHERE user_id = ? AND completed = true', [req.user.id]);
+    const tasksByArea = await all('SELECT life_area, COUNT(*) as count, SUM(CASE WHEN completed = true THEN 1 ELSE 0 END) as done FROM tasks WHERE user_id = ? AND life_area != \'\' GROUP BY life_area', [req.user.id]);
+    const tasksByDay = await all('SELECT EXTRACT(DOW FROM completed_at) as dow, COUNT(*) as count FROM tasks WHERE user_id = ? AND completed = true AND completed_at IS NOT NULL GROUP BY dow ORDER BY count DESC', [req.user.id]);
+    
+    // Financial analytics (current month)
+    const now = new Date();
+    const monthIncome = await get('SELECT COALESCE(SUM(amount), 0) as total FROM finances WHERE user_id = ? AND type = \'income\' AND EXTRACT(MONTH FROM date) = ? AND EXTRACT(YEAR FROM date) = ?', [req.user.id, now.getMonth() + 1, now.getFullYear()]);
+    const monthExpense = await get('SELECT COALESCE(SUM(amount), 0) as total FROM finances WHERE user_id = ? AND type = \'expense\' AND EXTRACT(MONTH FROM date) = ? AND EXTRACT(YEAR FROM date) = ?', [req.user.id, now.getMonth() + 1, now.getFullYear()]);
+    const topCategory = await get('SELECT category, SUM(amount) as total FROM finances WHERE user_id = ? AND type = \'expense\' AND EXTRACT(MONTH FROM date) = ? AND EXTRACT(YEAR FROM date) = ? GROUP BY category ORDER BY total DESC LIMIT 1', [req.user.id, now.getMonth() + 1, now.getFullYear()]);
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    
+    // Emotional analytics
+    const moodCounts = await all('SELECT mood, COUNT(*) as count FROM thoughts WHERE user_id = ? AND mood IS NOT NULL GROUP BY mood ORDER BY count DESC', [req.user.id]);
+    const avgMetrics = await get('SELECT AVG(energy) as avg_energy, AVG(stress) as avg_stress, AVG(clarity) as avg_clarity FROM thoughts WHERE user_id = ? AND (energy > 0 OR stress > 0 OR clarity > 0)', [req.user.id]);
+    const moodByDay = await all('SELECT EXTRACT(DOW FROM date) as dow, mood, COUNT(*) as count FROM thoughts WHERE user_id = ? AND mood IS NOT NULL GROUP BY dow, mood ORDER BY dow', [req.user.id]);
+    
+    // Gratitude streak
+    const gratDates = await all('SELECT DISTINCT date::date as d FROM gratitude WHERE user_id = ? ORDER BY d DESC LIMIT 60', [req.user.id]);
+    
+    const income = parseFloat(monthIncome.total);
+    const expense = parseFloat(monthExpense.total);
+    
+    res.json({
+      analytics: {
+        productivity: {
+          total: parseInt(totalTasks.count),
+          completed: parseInt(completedTasks.count),
+          completionRate: totalTasks.count > 0 ? Math.round((completedTasks.count / totalTasks.count) * 100) : 0,
+          byArea: tasksByArea,
+          byDayOfWeek: tasksByDay
+        },
+        financial: {
+          monthIncome: income,
+          monthExpense: expense,
+          balance: income - expense,
+          savingsRate: income > 0 ? Math.round(((income - expense) / income) * 100) : 0,
+          avgDailyExpense: Math.round((expense / Math.max(now.getDate(), 1)) * 100) / 100,
+          topCategory: topCategory?.category || null,
+          topCategoryAmount: topCategory ? parseFloat(topCategory.total) : 0,
+          projectedBalance: income - (expense / Math.max(now.getDate(), 1)) * daysInMonth
+        },
+        emotional: {
+          moodDistribution: moodCounts,
+          avgEnergy: avgMetrics?.avg_energy ? Math.round(avgMetrics.avg_energy * 10) / 10 : 0,
+          avgStress: avgMetrics?.avg_stress ? Math.round(avgMetrics.avg_stress * 10) / 10 : 0,
+          avgClarity: avgMetrics?.avg_clarity ? Math.round(avgMetrics.avg_clarity * 10) / 10 : 0,
+          moodByDay: moodByDay
+        },
+        gratitude: {
+          dates: gratDates.map(d => d.d)
+        }
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.post('/api/analytics/snapshot', authMiddleware, async (req, res) => {
+  const { type, data, period_start, period_end } = req.body;
+  try {
+    const result = await run('INSERT INTO analytics_snapshots (user_id, type, data, period_start, period_end) VALUES (?, ?, ?, ?, ?) RETURNING id',
+      [req.user.id, type, JSON.stringify(data || {}), period_start || null, period_end || null]);
+    const snapshot = await get('SELECT * FROM analytics_snapshots WHERE id = ?', [result.lastID]);
+    res.json({ snapshot });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.get('/api/analytics/snapshots', authMiddleware, async (req, res) => {
+  try {
+    const { type } = req.query;
+    let sql = 'SELECT * FROM analytics_snapshots WHERE user_id = ?';
+    const params = [req.user.id];
+    if (type) { sql += ' AND type = ?'; params.push(type); }
+    sql += ' ORDER BY created_at DESC LIMIT 30';
+    const rows = await all(sql, params);
+    res.json({ snapshots: rows });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Internal error' });

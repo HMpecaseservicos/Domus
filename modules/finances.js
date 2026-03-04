@@ -41,6 +41,7 @@ class FinanceManager {
         ];
 
         this.accounts = [];
+        this.budgets = [];
         this.accountTypes = [
             { id: 'checking', name: 'Conta Corrente', icon: 'fa-university', color: '#3B82F6' },
             { id: 'savings', name: 'Poupança', icon: 'fa-piggy-bank', color: '#10B981' },
@@ -55,6 +56,7 @@ class FinanceManager {
         this._recalcTotals();
         this.renderAll();
         this.renderAccounts();
+        this.renderBudgets();
     }
 
     setupEventListeners() {
@@ -260,6 +262,7 @@ class FinanceManager {
         this.updateKPIs();
         this.updateBudgetBar();
         this.renderCategoryBars();
+        this.renderBudgets();
         this.renderTransactions();
         this.updateMonthLabel();
     }
@@ -272,6 +275,14 @@ class FinanceManager {
         const balance = inc - exp;
         const savingsRate = inc > 0 ? ((inc - exp) / inc * 100) : 0;
 
+        // Enhanced KPIs
+        const today = new Date();
+        const dayOfMonth = today.getDate();
+        const daysInMonth = new Date(this.viewYear, this.viewMonth + 1, 0).getDate();
+        const avgDailyExp = dayOfMonth > 0 ? (exp / dayOfMonth) : 0;
+        const projectedExp = avgDailyExp * daysInMonth;
+        const projectedBalance = inc - projectedExp;
+
         const fmt = (v) => this._formatBRL(v);
 
         const balEl = document.getElementById('fin-kpi-balance');
@@ -280,6 +291,8 @@ class FinanceManager {
         const savEl = document.getElementById('fin-kpi-savings');
         const cntEl = document.getElementById('fin-kpi-count');
         const heroEl = document.getElementById('fin-hero-balance');
+        const avgEl = document.getElementById('fin-kpi-daily-avg');
+        const projEl = document.getElementById('fin-kpi-projection');
 
         if (heroEl) heroEl.textContent = fmt(balance);
         if (balEl) balEl.textContent = fmt(balance);
@@ -287,6 +300,11 @@ class FinanceManager {
         if (expEl) expEl.textContent = fmt(exp);
         if (savEl) savEl.textContent = `${savingsRate.toFixed(1)}%`;
         if (cntEl) cntEl.textContent = monthTx.length;
+        if (avgEl) avgEl.textContent = fmt(avgDailyExp);
+        if (projEl) {
+            projEl.textContent = fmt(projectedBalance);
+            projEl.className = 'fin-kpi-value ' + (projectedBalance >= 0 ? 'positive' : 'negative');
+        }
 
         // Update home dashboard balance
         const homeBalance = document.getElementById('balance');
@@ -660,6 +678,100 @@ class FinanceManager {
         }
     }
 
+    // ===== BUDGETS PER CATEGORY =====
+    async loadBudgets() {
+        if (!this.auth.getToken()) return;
+        try {
+            const m = this.viewMonth + 1;
+            const y = this.viewYear;
+            const resp = await this.auth.apiRequest(`/api/budgets?month=${m}&year=${y}`, { method: 'GET' });
+            if (resp && Array.isArray(resp.budgets)) {
+                this.budgets = resp.budgets.map(b => ({ ...b, amount: parseFloat(b.amount) }));
+                this.renderBudgets();
+            }
+        } catch (err) { console.warn('Erro ao carregar orçamentos:', err); }
+    }
+
+    async saveBudget() {
+        const catEl = document.getElementById('fin-budget-cat');
+        const amtEl = document.getElementById('fin-budget-amount');
+        const category = catEl?.value;
+        const amount = parseFloat(amtEl?.value);
+        if (!category) { this.auth.showNotification('Selecione uma categoria.', 'warning'); return; }
+        if (!amount || amount <= 0) { this.auth.showNotification('Informe um valor válido.', 'warning'); return; }
+
+        const month = this.viewMonth + 1;
+        const year = this.viewYear;
+
+        if (this.auth.getToken()) {
+            try {
+                const resp = await this.auth.apiRequest('/api/budgets', {
+                    method: 'POST',
+                    body: JSON.stringify({ category, amount, month, year })
+                });
+                const idx = this.budgets.findIndex(b => b.category === category);
+                const newBudget = { ...resp.budget, amount: parseFloat(resp.budget.amount) };
+                if (idx !== -1) this.budgets[idx] = newBudget;
+                else this.budgets.push(newBudget);
+            } catch (err) { this.auth.showNotification(err.message || 'Erro', 'error'); return; }
+        } else {
+            const idx = this.budgets.findIndex(b => b.category === category);
+            if (idx !== -1) this.budgets[idx].amount = amount;
+            else this.budgets.push({ id: Date.now(), category, amount, month, year });
+        }
+
+        if (amtEl) amtEl.value = '';
+        if (catEl) catEl.selectedIndex = 0;
+        this.renderBudgets();
+        this.saveData();
+        this.auth.showNotification('Orçamento salvo!', 'success');
+    }
+
+    async deleteBudget(id) {
+        if (this.auth.getToken() && Number.isInteger(id)) {
+            try { await this.auth.apiRequest(`/api/budgets/${id}`, { method: 'DELETE' }); }
+            catch (err) { this.auth.showNotification(err.message || 'Erro', 'error'); return; }
+        }
+        this.budgets = this.budgets.filter(b => b.id !== id);
+        this.renderBudgets();
+        this.saveData();
+    }
+
+    renderBudgets() {
+        const container = document.getElementById('fin-budgets-list');
+        if (!container) return;
+
+        if (this.budgets.length === 0) {
+            container.innerHTML = '<div class="fin-empty-cats">Defina orçamentos por categoria</div>';
+            return;
+        }
+
+        const monthExpenses = this._getMonthTransactions().filter(t => t.type === 'expense');
+        container.innerHTML = this.budgets.map(b => {
+            const spent = monthExpenses.filter(t => t.category === b.category).reduce((s, t) => s + t.amount, 0);
+            const cat = this.categories.find(c => c.id === b.category) || { name: b.category, icon: 'fa-tag', color: '#9CA3AF' };
+            const pct = b.amount > 0 ? Math.min((spent / b.amount) * 100, 100) : 0;
+            const remaining = Math.max(b.amount - spent, 0);
+            const status = pct >= 100 ? 'over' : pct >= 80 ? 'warning' : 'ok';
+
+            return `
+                <div class="fin-budget-item budget-${status}">
+                    <div class="fin-budget-item-header">
+                        <span style="color:${cat.color}"><i class="fas ${cat.icon}"></i> ${cat.name}</span>
+                        <span>${this._formatBRL(spent)} / ${this._formatBRL(b.amount)}</span>
+                        <button class="fin-budget-del" onclick="window.app.financeManager.deleteBudget(${b.id})" title="Remover"><i class="fas fa-times"></i></button>
+                    </div>
+                    <div class="fin-budget-item-bar">
+                        <div class="fin-budget-item-fill budget-fill-${status}" style="width:${pct}%"></div>
+                    </div>
+                    <div class="fin-budget-item-footer">
+                        <span>${pct.toFixed(0)}% usado</span>
+                        <span>Resta ${this._formatBRL(remaining)}</span>
+                    </div>
+                </div>`;
+        }).join('');
+    }
+
     // ===== SERVER DATA =====
     async loadServerData() {
         if (!this.auth.getToken()) return;
@@ -668,7 +780,8 @@ class FinanceManager {
             const y = this.viewYear;
             const [finResp] = await Promise.all([
                 this.auth.apiRequest(`/api/finances?month=${m}&year=${y}`, { method: 'GET' }),
-                this.loadAccounts()
+                this.loadAccounts(),
+                this.loadBudgets()
             ]);
             if (finResp && Array.isArray(finResp.finances)) {
                 const otherTx = this.transactions.filter(t => {
@@ -691,7 +804,8 @@ class FinanceManager {
             localStorage.setItem(this.auth.getStorageKey('finances'), JSON.stringify({
                 transactions: this.transactions,
                 budgetGoal: this.budgetGoal,
-                accounts: this.accounts
+                accounts: this.accounts,
+                budgets: this.budgets
             }));
         } catch (e) {
             console.warn('Falha ao salvar finanças:', e);
@@ -710,6 +824,7 @@ class FinanceManager {
                     }));
                     this.budgetGoal = parsed.budgetGoal || 0;
                     this.accounts = parsed.accounts || [];
+                    this.budgets = parsed.budgets || [];
                     this._recalcTotals();
                 }
             }
@@ -762,6 +877,20 @@ class FinanceManager {
                         <div class="fin-kpi-info">
                             <span class="fin-kpi-value" id="fin-kpi-count">0</span>
                             <span class="fin-kpi-label">Transações</span>
+                        </div>
+                    </div>
+                    <div class="fin-kpi-card daily-kpi">
+                        <div class="fin-kpi-icon"><i class="fas fa-calendar-day"></i></div>
+                        <div class="fin-kpi-info">
+                            <span class="fin-kpi-value" id="fin-kpi-daily-avg">R$ 0,00</span>
+                            <span class="fin-kpi-label">Média/Dia</span>
+                        </div>
+                    </div>
+                    <div class="fin-kpi-card projection-kpi">
+                        <div class="fin-kpi-icon"><i class="fas fa-chart-line"></i></div>
+                        <div class="fin-kpi-info">
+                            <span class="fin-kpi-value" id="fin-kpi-projection">R$ 0,00</span>
+                            <span class="fin-kpi-label">Projeção</span>
                         </div>
                     </div>
                 </div>
@@ -832,6 +961,31 @@ class FinanceManager {
             <div class="fin-section-card">
                 <h3 class="fin-section-title"><i class="fas fa-chart-pie"></i> Despesas por Categoria</h3>
                 <div class="fin-category-bars" id="fin-category-bars"></div>
+            </div>
+
+            <!-- Budgets per Category -->
+            <div class="fin-section-card">
+                <h3 class="fin-section-title"><i class="fas fa-bullseye"></i> Orçamentos por Categoria</h3>
+                <div class="fin-budget-add-row">
+                    <select id="fin-budget-cat" class="fin-add-input">
+                        <option value="">Categoria</option>
+                        <option value="alimentacao">Alimentação</option>
+                        <option value="transporte">Transporte</option>
+                        <option value="moradia">Moradia</option>
+                        <option value="saude">Saúde</option>
+                        <option value="lazer">Lazer</option>
+                        <option value="educacao">Educação</option>
+                        <option value="trabalho">Trabalho</option>
+                        <option value="investimentos">Investimentos</option>
+                        <option value="vestuario">Vestuário</option>
+                        <option value="assinaturas">Assinaturas</option>
+                        <option value="presentes">Presentes</option>
+                        <option value="outros">Outros</option>
+                    </select>
+                    <input type="number" id="fin-budget-amount" class="fin-add-input" placeholder="Valor R$" step="0.01" min="0" />
+                    <button class="fin-add-btn" onclick="window.app.financeManager.saveBudget()"><i class="fas fa-plus"></i></button>
+                </div>
+                <div id="fin-budgets-list"></div>
             </div>
 
             <!-- Toolbar -->

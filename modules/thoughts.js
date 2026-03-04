@@ -51,7 +51,12 @@ class ThoughtsManager {
             try {
                 const resp = await this.auth.apiRequest('/api/thoughts', {
                     method: 'POST',
-                    body: JSON.stringify({ text, mood: this.selectedMood, tags })
+                    body: JSON.stringify({
+                        text, mood: this.selectedMood, tags,
+                        energy: parseInt(document.getElementById('thought-energy')?.value) || 0,
+                        stress: parseInt(document.getElementById('thought-stress')?.value) || 0,
+                        clarity: parseInt(document.getElementById('thought-clarity')?.value) || 0
+                    })
                 });
                 
                 const serverThought = resp.thought;
@@ -61,11 +66,19 @@ class ThoughtsManager {
                     mood: serverThought.mood || this.selectedMood,
                     date: serverThought.date || new Date().toISOString(),
                     tags: serverThought.tags ? 
-                        serverThought.tags.split(',').filter(Boolean) : tags
+                        serverThought.tags.split(',').filter(Boolean) : tags,
+                    energy: serverThought.energy || 0,
+                    stress: serverThought.stress || 0,
+                    clarity: serverThought.clarity || 0
                 };
                 
                 this.thoughts.unshift(thought);
-                thoughtInput.value = '';
+                if (thoughtInput) thoughtInput.value = '';
+                // Reset sliders
+                ['thought-energy', 'thought-stress', 'thought-clarity'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) { el.value = 3; const valEl = document.getElementById(id + '-val'); if (valEl) valEl.textContent = '3'; }
+                });
                 this.renderThoughts();
                 this.updateStats();
                 this.saveData();
@@ -81,11 +94,20 @@ class ThoughtsManager {
                 text: text,
                 mood: this.selectedMood,
                 date: new Date().toISOString(),
-                tags
+                tags,
+                energy: parseInt(document.getElementById('thought-energy')?.value) || 0,
+                stress: parseInt(document.getElementById('thought-stress')?.value) || 0,
+                clarity: parseInt(document.getElementById('thought-clarity')?.value) || 0
             };
             
             this.thoughts.push(thought);
-            thoughtInput.value = '';
+            const thoughtInput = document.getElementById('new-thought');
+            if (thoughtInput) thoughtInput.value = '';
+            // Reset sliders
+            ['thought-energy', 'thought-stress', 'thought-clarity'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) { el.value = 3; const valEl = document.getElementById(id + '-val'); if (valEl) valEl.textContent = '3'; }
+            });
             this.renderThoughts();
             this.updateStats();
             this.saveData();
@@ -138,12 +160,21 @@ class ThoughtsManager {
             const safeTags = thought.tags.map(tag => 
                 window.DomusUtils ? DomusUtils.escapeHTML(tag) : tag
             );
+
+            const metricsHTML = (thought.energy || thought.stress || thought.clarity) ? `
+                <div class="thought-metrics">
+                    ${thought.energy ? `<span class="thought-metric energy"><i class="fas fa-bolt"></i> ${thought.energy}/5</span>` : ''}
+                    ${thought.stress ? `<span class="thought-metric stress"><i class="fas fa-fire"></i> ${thought.stress}/5</span>` : ''}
+                    ${thought.clarity ? `<span class="thought-metric clarity"><i class="fas fa-eye"></i> ${thought.clarity}/5</span>` : ''}
+                </div>` : '';
+
             thoughtElement.innerHTML = `
                 <div class="thought-header">
                     <div class="thought-date">${new Date(thought.date).toLocaleDateString('pt-BR')}</div>
                     <div class="thought-mood"><i class="fas ${moodIcons[thought.mood] || 'fa-meh'}"></i></div>
                 </div>
                 <div class="thought-content">${safeText}</div>
+                ${metricsHTML}
                 <div class="thought-tags">
                     ${safeTags.map(tag => `<span class="tag">${tag}</span>`).join('')}
                 </div>
@@ -170,7 +201,10 @@ class ThoughtsManager {
                     text: t.text,
                     mood: t.mood || 'neutral',
                     date: t.date || new Date().toISOString(),
-                    tags: t.tags ? t.tags.split(',').filter(Boolean) : []
+                    tags: t.tags ? t.tags.split(',').filter(Boolean) : [],
+                    energy: t.energy || 0,
+                    stress: t.stress || 0,
+                    clarity: t.clarity || 0
                 }));
                 this.renderThoughts();
                 this.updateStats();
@@ -240,6 +274,20 @@ class ThoughtsManager {
                     </div>
                 </div>
                 <textarea id="new-thought" placeholder="Como você está se sentindo? O que está pensando?"></textarea>
+                <div class="thought-sliders">
+                    <div class="thought-slider-group">
+                        <label><i class="fas fa-bolt"></i> Energia: <strong id="thought-energy-val">3</strong></label>
+                        <input type="range" id="thought-energy" min="1" max="5" value="3" oninput="document.getElementById('thought-energy-val').textContent=this.value" />
+                    </div>
+                    <div class="thought-slider-group">
+                        <label><i class="fas fa-fire"></i> Estresse: <strong id="thought-stress-val">3</strong></label>
+                        <input type="range" id="thought-stress" min="1" max="5" value="3" oninput="document.getElementById('thought-stress-val').textContent=this.value" />
+                    </div>
+                    <div class="thought-slider-group">
+                        <label><i class="fas fa-eye"></i> Clareza: <strong id="thought-clarity-val">3</strong></label>
+                        <input type="range" id="thought-clarity" min="1" max="5" value="3" oninput="document.getElementById('thought-clarity-val').textContent=this.value" />
+                    </div>
+                </div>
                 <button class="btn btn-primary btn-block" id="add-thought">Registrar Pensamento</button>
             </div>
         `;

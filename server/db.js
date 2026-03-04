@@ -296,6 +296,126 @@ async function init() {
     await client.query('CREATE INDEX IF NOT EXISTS idx_habit_logs_habit_id ON habit_logs(habit_id);');
     await client.query('CREATE INDEX IF NOT EXISTS idx_habit_logs_date ON habit_logs(date);');
 
+    // ===== MODULE EVOLUTION MIGRATIONS =====
+
+    // TASKS: life_area, priority scoring fields, planned_date for weekly planner
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE tasks ADD COLUMN IF NOT EXISTS life_area VARCHAR(30) DEFAULT '';
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE tasks ADD COLUMN IF NOT EXISTS urgency INTEGER DEFAULT 1;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE tasks ADD COLUMN IF NOT EXISTS impact INTEGER DEFAULT 1;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE tasks ADD COLUMN IF NOT EXISTS energy INTEGER DEFAULT 1;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE tasks ADD COLUMN IF NOT EXISTS planned_date DATE;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE tasks ADD COLUMN IF NOT EXISTS linked_goal_id INTEGER;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+
+    // FINANCES: budgets table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS budgets (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        category VARCHAR(100) NOT NULL,
+        amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+        month INTEGER NOT NULL,
+        year INTEGER NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(user_id, category, month, year)
+      );
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_budgets_user_id ON budgets(user_id);');
+
+    // THOUGHTS: energy, stress, clarity
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE thoughts ADD COLUMN IF NOT EXISTS energy INTEGER DEFAULT 0;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE thoughts ADD COLUMN IF NOT EXISTS stress INTEGER DEFAULT 0;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE thoughts ADD COLUMN IF NOT EXISTS clarity INTEGER DEFAULT 0;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+
+    // GRATITUDE: type field
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE gratitude ADD COLUMN IF NOT EXISTS type VARCHAR(30) DEFAULT 'geral';
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+
+    // PURPOSE: vision field, goals table
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE purpose ADD COLUMN IF NOT EXISTS vision TEXT DEFAULT '';
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS goals (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        title VARCHAR(300) NOT NULL,
+        description TEXT DEFAULT '',
+        life_area VARCHAR(30) DEFAULT '',
+        target_date DATE,
+        progress INTEGER DEFAULT 0,
+        status VARCHAR(20) DEFAULT 'active',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_goals_user_id ON goals(user_id);');
+
+    // PATTERNS: analytics_snapshots table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS analytics_snapshots (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        type VARCHAR(30) NOT NULL,
+        data JSONB NOT NULL DEFAULT '{}',
+        period_start DATE,
+        period_end DATE,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_analytics_user_id ON analytics_snapshots(user_id);');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_analytics_type ON analytics_snapshots(type);');
+
     await client.query('COMMIT');
     console.log('PostgreSQL database initialized with tables and indexes');
   } catch (err) {

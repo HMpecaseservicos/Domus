@@ -21,6 +21,16 @@ class TaskManager {
             { id: 'financas', name: 'Finanças', icon: 'fa-coins', color: '#10B981' },
             { id: 'outro', name: 'Outro', icon: 'fa-tag', color: '#9CA3AF' }
         ];
+        this.lifeAreas = [
+            { id: 'trabalho', name: 'Trabalho', icon: 'fa-briefcase', color: '#3B82F6' },
+            { id: 'financas', name: 'Finanças', icon: 'fa-coins', color: '#10B981' },
+            { id: 'saude', name: 'Saúde', icon: 'fa-heartbeat', color: '#EF4444' },
+            { id: 'espiritual', name: 'Espiritual', icon: 'fa-pray', color: '#8B5CF6' },
+            { id: 'familia', name: 'Família', icon: 'fa-users', color: '#EC4899' },
+            { id: 'estudos', name: 'Estudos', icon: 'fa-graduation-cap', color: '#6366F1' },
+            { id: 'projetos', name: 'Projetos', icon: 'fa-rocket', color: '#F59E0B' }
+        ];
+        this.weeklyViewDate = this._getMondayOfWeek(new Date());
     }
 
     init() {
@@ -57,6 +67,13 @@ class TaskManager {
         const kanbanViewBtn = document.getElementById('task-view-kanban');
         if (listViewBtn) listViewBtn.addEventListener('click', () => this.setViewMode('list'));
         if (kanbanViewBtn) kanbanViewBtn.addEventListener('click', () => this.setViewMode('kanban'));
+        const weeklyViewBtn = document.getElementById('task-view-weekly');
+        if (weeklyViewBtn) weeklyViewBtn.addEventListener('click', () => this.setViewMode('weekly'));
+
+        const weeklyPrev = document.getElementById('weekly-prev');
+        const weeklyNext = document.getElementById('weekly-next');
+        if (weeklyPrev) weeklyPrev.addEventListener('click', () => { this.weeklyViewDate.setDate(this.weeklyViewDate.getDate() - 7); this.renderWeeklyPlanner(); });
+        if (weeklyNext) weeklyNext.addEventListener('click', () => { this.weeklyViewDate.setDate(this.weeklyViewDate.getDate() + 7); this.renderWeeklyPlanner(); });
     }
 
     // ===== VIEW MODE =====
@@ -64,9 +81,12 @@ class TaskManager {
         this.viewMode = mode;
         document.getElementById('task-view-list')?.classList.toggle('active', mode === 'list');
         document.getElementById('task-view-kanban')?.classList.toggle('active', mode === 'kanban');
+        document.getElementById('task-view-weekly')?.classList.toggle('active', mode === 'weekly');
         document.getElementById('task-list-container')?.classList.toggle('hidden', mode !== 'list');
         document.getElementById('task-kanban-container')?.classList.toggle('hidden', mode !== 'kanban');
+        document.getElementById('task-weekly-container')?.classList.toggle('hidden', mode !== 'weekly');
         if (mode === 'kanban') this.renderKanban();
+        else if (mode === 'weekly') this.renderWeeklyPlanner();
         else this.renderTasks();
     }
 
@@ -94,7 +114,13 @@ class TaskManager {
 
         const taskData = {
             text, priority, category, due_date: dueDate || null, notes,
-            status: 'todo', subtasks: [], tags, estimated_minutes: estimatedMinutes, recurrence
+            status: 'todo', subtasks: [], tags, estimated_minutes: estimatedMinutes, recurrence,
+            life_area: document.getElementById('task-add-life-area')?.value || '',
+            urgency: parseInt(document.getElementById('task-add-urgency')?.value) || 1,
+            impact: parseInt(document.getElementById('task-add-impact')?.value) || 1,
+            energy: parseInt(document.getElementById('task-add-energy')?.value) || 1,
+            planned_date: document.getElementById('task-add-planned')?.value || null,
+            linked_goal_id: parseInt(document.getElementById('task-add-goal')?.value) || null
         };
 
         if (this.auth.getToken()) {
@@ -110,7 +136,9 @@ class TaskManager {
                 id: Date.now(), text, completed: false, priority, category,
                 dueDate: dueDate || null, notes, sortOrder: 0, status: 'todo',
                 subtasks: [], tags, estimatedMinutes, recurrence,
-                createdAt: new Date().toISOString(), completedAt: null
+                createdAt: new Date().toISOString(), completedAt: null,
+                lifeArea: taskData.life_area, urgency: taskData.urgency, impact: taskData.impact,
+                energy: taskData.energy, plannedDate: taskData.planned_date, linkedGoalId: taskData.linked_goal_id
             });
         }
 
@@ -220,12 +248,17 @@ class TaskManager {
         const estimatedMinutes = estimateInput ? parseInt(estimateInput.value) || 0 : task.estimatedMinutes;
         const recurrence = recurrenceSelect ? recurrenceSelect.value : task.recurrence;
         const tags = tagsInput ? tagsInput.value.split(',').map(t => t.trim()).filter(Boolean) : task.tags;
+        const lifeArea = document.getElementById(`task-edit-life-area-${id}`)?.value ?? task.lifeArea;
+        const urgency = parseInt(document.getElementById(`task-edit-urgency-${id}`)?.value) || task.urgency;
+        const impact = parseInt(document.getElementById(`task-edit-impact-${id}`)?.value) || task.impact;
+        const energy = parseInt(document.getElementById(`task-edit-energy-${id}`)?.value) || task.energy;
+        const linkedGoalId = parseInt(document.getElementById(`task-edit-goal-${id}`)?.value) || task.linkedGoalId;
 
         if (this.auth.getToken() && Number.isInteger(id)) {
             try {
                 const resp = await this.auth.apiRequest(`/api/tasks/${id}`, {
                     method: 'PUT',
-                    body: JSON.stringify({ text, priority, category, due_date: dueDate, notes, estimated_minutes: estimatedMinutes, recurrence, tags, status: task.status })
+                    body: JSON.stringify({ text, priority, category, due_date: dueDate, notes, estimated_minutes: estimatedMinutes, recurrence, tags, status: task.status, life_area: lifeArea, urgency, impact, energy, linked_goal_id: linkedGoalId })
                 });
                 Object.assign(task, this._mapServerTask(resp.task));
             } catch (err) {
@@ -483,6 +516,15 @@ class TaskManager {
             catBadge = `<span class="task-cat-badge"><i class="fas fa-tag"></i> ${task.category}</span>`;
         }
 
+        let areaBadge = '';
+        if (task.lifeArea) {
+            const areaObj = this.lifeAreas.find(a => a.id === task.lifeArea);
+            if (areaObj) areaBadge = `<span class="task-area-badge" style="color:${areaObj.color}"><i class="fas ${areaObj.icon}"></i> ${areaObj.name}</span>`;
+        }
+
+        const prioScore = this._calcPriorityScore(task);
+        const prioScoreBadge = prioScore > 1 ? `<span class="task-score-badge ${prioScore >= 9 ? 'score-high' : prioScore >= 4 ? 'score-med' : 'score-low'}" title="Score: U${task.urgency||1}×I${task.impact||1}/E${task.energy||1}"><i class="fas fa-bolt"></i> ${prioScore}</span>` : '';
+
         let tagsBadges = '';
         if (task.tags && task.tags.length > 0) {
             tagsBadges = task.tags.map(tag => `<span class="task-tag-badge">#${this._esc(tag)}</span>`).join('');
@@ -542,7 +584,7 @@ class TaskManager {
                     <span class="task-prio-badge task-prio-${task.priority}" title="Prioridade: ${prioLabels[task.priority]}">
                         <i class="fas ${prioIcons[task.priority]}"></i> ${prioLabels[task.priority]}
                     </span>
-                    ${catBadge}${dueBadge}${estimateBadge}${recurrenceBadge}${tagsBadges}
+                    ${prioScoreBadge}${areaBadge}${catBadge}${dueBadge}${estimateBadge}${recurrenceBadge}${tagsBadges}
                 </div>
             </div>
             <div class="task-card-actions">
@@ -601,6 +643,7 @@ class TaskManager {
 
     _renderEditForm(task) {
         const catOptions = this.categories.map(c => `<option value="${c.id}" ${task.category === c.id || task.category === c.name ? 'selected' : ''}>${c.name}</option>`).join('');
+        const areaOptions = this.lifeAreas.map(a => `<option value="${a.id}" ${task.lifeArea === a.id ? 'selected' : ''}>${a.name}</option>`).join('');
         const tagsStr = (task.tags || []).join(', ');
 
         return `
@@ -616,7 +659,25 @@ class TaskManager {
                         <option value="">Sem categoria</option>
                         ${catOptions}
                     </select>
+                    <select id="task-edit-life-area-${task.id}" class="task-edit-select" title="Área da Vida">
+                        <option value="">Sem área</option>
+                        ${areaOptions}
+                    </select>
                     <input type="date" id="task-edit-due-${task.id}" class="task-edit-date" value="${task.dueDate || ''}" />
+                </div>
+                <div class="task-edit-fields">
+                    <div class="task-edit-slider-group">
+                        <label>Urgência: <strong id="task-edit-urgency-val-${task.id}">${task.urgency || 1}</strong></label>
+                        <input type="range" id="task-edit-urgency-${task.id}" min="1" max="5" value="${task.urgency || 1}" oninput="document.getElementById('task-edit-urgency-val-${task.id}').textContent=this.value" />
+                    </div>
+                    <div class="task-edit-slider-group">
+                        <label>Impacto: <strong id="task-edit-impact-val-${task.id}">${task.impact || 1}</strong></label>
+                        <input type="range" id="task-edit-impact-${task.id}" min="1" max="5" value="${task.impact || 1}" oninput="document.getElementById('task-edit-impact-val-${task.id}').textContent=this.value" />
+                    </div>
+                    <div class="task-edit-slider-group">
+                        <label>Energia: <strong id="task-edit-energy-val-${task.id}">${task.energy || 1}</strong></label>
+                        <input type="range" id="task-edit-energy-${task.id}" min="1" max="5" value="${task.energy || 1}" oninput="document.getElementById('task-edit-energy-val-${task.id}').textContent=this.value" />
+                    </div>
                 </div>
                 <div class="task-edit-fields">
                     <input type="number" id="task-edit-estimate-${task.id}" class="task-edit-select" placeholder="Min." value="${task.estimatedMinutes || ''}" min="0" style="max-width:80px" />
@@ -627,6 +688,9 @@ class TaskManager {
                         <option value="monthly" ${task.recurrence === 'monthly' ? 'selected' : ''}>Mensal</option>
                     </select>
                     <input type="text" id="task-edit-tags-${task.id}" class="task-edit-input" placeholder="Tags (vírgula)" value="${tagsStr}" style="flex:1" />
+                    <select id="task-edit-goal-${task.id}" class="task-edit-select" title="Meta vinculada">
+                        <option value="">Sem meta</option>
+                    </select>
                 </div>
                 <textarea id="task-edit-notes-${task.id}" class="task-edit-notes" rows="2" placeholder="Notas...">${task.notes || ''}</textarea>
                 <div class="task-edit-actions">
@@ -834,7 +898,13 @@ class TaskManager {
             estimatedMinutes: t.estimated_minutes || 0,
             recurrence: t.recurrence || '',
             createdAt: t.created_at || new Date().toISOString(),
-            completedAt: t.completed_at || null
+            completedAt: t.completed_at || null,
+            lifeArea: t.life_area || '',
+            urgency: t.urgency || 1,
+            impact: t.impact || 1,
+            energy: t.energy || 1,
+            plannedDate: t.planned_date || null,
+            linkedGoalId: t.linked_goal_id || null
         };
     }
 
@@ -843,7 +913,9 @@ class TaskManager {
             text: task.text, priority: task.priority, category: task.category,
             due_date: task.dueDate, notes: task.notes, status: task.status,
             subtasks: task.subtasks, tags: task.tags,
-            estimated_minutes: task.estimatedMinutes, recurrence: task.recurrence
+            estimated_minutes: task.estimatedMinutes, recurrence: task.recurrence,
+            life_area: task.lifeArea, urgency: task.urgency, impact: task.impact,
+            energy: task.energy, planned_date: task.plannedDate, linked_goal_id: task.linkedGoalId
         };
     }
 
@@ -868,6 +940,106 @@ class TaskManager {
             const raw = localStorage.getItem(this.auth.getStorageKey('tasks'));
             if (raw) { const parsed = JSON.parse(raw); if (parsed.tasks && Array.isArray(parsed.tasks)) this.tasks = parsed.tasks; }
         } catch (e) { console.warn('Erro localStorage tarefas:', e); }
+    }
+
+    // ===== PRIORITY SCORE =====
+    _calcPriorityScore(task) {
+        const u = task.urgency || 1;
+        const i = task.impact || 1;
+        const e = task.energy || 1;
+        // Time factor: tasks with closer due dates score higher
+        let timeFactor = 1;
+        if (task.dueDate) {
+            const daysLeft = Math.max(0, Math.ceil((new Date(task.dueDate + 'T23:59:59') - new Date()) / 86400000));
+            if (daysLeft <= 1) timeFactor = 2;
+            else if (daysLeft <= 3) timeFactor = 1.5;
+            else if (daysLeft <= 7) timeFactor = 1.2;
+        }
+        return Math.round(((u * i * timeFactor) / Math.max(e, 1)) * 10) / 10;
+    }
+
+    // ===== WEEKLY PLANNER =====
+    _getMondayOfWeek(date) {
+        const d = new Date(date);
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        d.setDate(diff);
+        d.setHours(0, 0, 0, 0);
+        return d;
+    }
+
+    renderWeeklyPlanner() {
+        const container = document.getElementById('task-weekly-planner');
+        const titleEl = document.getElementById('weekly-planner-title');
+        if (!container) return;
+
+        const monday = new Date(this.weeklyViewDate);
+        const sunday = new Date(monday);
+        sunday.setDate(sunday.getDate() + 6);
+
+        const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+        if (titleEl) titleEl.textContent = `${monday.getDate()} ${monthNames[monday.getMonth()]} - ${sunday.getDate()} ${monthNames[sunday.getMonth()]} ${sunday.getFullYear()}`;
+
+        const dayNames = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB', 'DOM'];
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        let html = '';
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(monday);
+            d.setDate(d.getDate() + i);
+            const dateStr = d.toISOString().split('T')[0];
+            const isToday = dateStr === todayStr;
+
+            const dayTasks = this.tasks.filter(t => {
+                if (t.status === 'done') return false;
+                return (t.plannedDate === dateStr) || (t.dueDate === dateStr && !t.plannedDate);
+            });
+
+            const taskCards = dayTasks.map(t => {
+                const score = this._calcPriorityScore(t);
+                const areaObj = this.lifeAreas.find(a => a.id === t.lifeArea);
+                const areaColor = areaObj ? areaObj.color : '#9CA3AF';
+                return `<div class="weekly-task-card task-priority-${t.priority}" style="border-left:3px solid ${areaColor}" onclick="window.app.taskManager.editTask(${t.id})">
+                    <span class="weekly-task-text">${this._esc(t.text)}</span>
+                    ${score > 1 ? `<span class="weekly-task-score"><i class="fas fa-bolt"></i>${score}</span>` : ''}
+                </div>`;
+            }).join('');
+
+            html += `
+                <div class="weekly-day-col ${isToday ? 'weekly-today' : ''}">
+                    <div class="weekly-day-header">
+                        <span class="weekly-day-name">${dayNames[i]}</span>
+                        <span class="weekly-day-date">${d.getDate()}</span>
+                    </div>
+                    <div class="weekly-day-tasks" data-date="${dateStr}"
+                         ondragover="event.preventDefault();this.classList.add('weekly-drop-target')"
+                         ondragleave="this.classList.remove('weekly-drop-target')"
+                         ondrop="window.app.taskManager._weeklyDrop(event,'${dateStr}');this.classList.remove('weekly-drop-target')">
+                        ${taskCards || '<div class="weekly-empty">—</div>'}
+                    </div>
+                </div>`;
+        }
+
+        container.innerHTML = html;
+    }
+
+    async _weeklyDrop(e, dateStr) {
+        e.preventDefault();
+        if (this.draggedItem === null) return;
+        const task = this.tasks.find(t => t.id === this.draggedItem);
+        if (!task) return;
+        task.plannedDate = dateStr;
+        if (this.auth.getToken() && Number.isInteger(task.id)) {
+            try {
+                await this.auth.apiRequest(`/api/tasks/${task.id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ ...this._toServerTask(task), planned_date: dateStr })
+                });
+            } catch (err) { console.warn('Erro ao atualizar data planejada:', err); }
+        }
+        this.saveData();
+        this.renderWeeklyPlanner();
+        this.draggedItem = null;
     }
 
     // ===== TEMPLATE =====
@@ -976,6 +1148,25 @@ class TaskManager {
                             <option value="monthly">Mensal</option>
                         </select>
                         <input type="text" id="task-add-tags" class="task-add-select" placeholder="Tags (vírgula)" title="Tags" style="flex:1;min-width:120px" />
+                        <select id="task-add-life-area" class="task-add-select" title="Área da Vida">
+                            <option value="">Área da Vida</option>
+                            <option value="trabalho">Trabalho</option>
+                            <option value="financas">Finanças</option>
+                            <option value="saude">Saúde</option>
+                            <option value="espiritual">Espiritual</option>
+                            <option value="familia">Família</option>
+                            <option value="estudos">Estudos</option>
+                            <option value="projetos">Projetos</option>
+                        </select>
+                        <div class="task-add-sliders-row">
+                            <div class="task-slider-group"><label>Urgência: <strong id="task-add-urgency-val">1</strong></label><input type="range" id="task-add-urgency" min="1" max="5" value="1" oninput="document.getElementById('task-add-urgency-val').textContent=this.value" /></div>
+                            <div class="task-slider-group"><label>Impacto: <strong id="task-add-impact-val">1</strong></label><input type="range" id="task-add-impact" min="1" max="5" value="1" oninput="document.getElementById('task-add-impact-val').textContent=this.value" /></div>
+                            <div class="task-slider-group"><label>Energia: <strong id="task-add-energy-val">1</strong></label><input type="range" id="task-add-energy" min="1" max="5" value="1" oninput="document.getElementById('task-add-energy-val').textContent=this.value" /></div>
+                        </div>
+                        <input type="date" id="task-add-planned" class="task-add-date" title="Data planejada" />
+                        <select id="task-add-goal" class="task-add-select" title="Meta vinculada">
+                            <option value="">Sem meta</option>
+                        </select>
                         <textarea id="task-add-notes" class="task-add-notes" rows="2" placeholder="Notas opcionais..."></textarea>
                     </div>
                 </form>
@@ -990,6 +1181,7 @@ class TaskManager {
                 <div class="task-view-toggle">
                     <button class="task-view-btn active" id="task-view-list" title="Lista"><i class="fas fa-list"></i></button>
                     <button class="task-view-btn" id="task-view-kanban" title="Kanban"><i class="fas fa-columns"></i></button>
+                    <button class="task-view-btn" id="task-view-weekly" title="Semanal"><i class="fas fa-calendar-week"></i></button>
                 </div>
                 <div class="task-filters-wrap">
                     <button class="task-filter-chip active" data-filter="all">Todas <span class="task-chip-count" id="task-count-badge">0</span></button>
@@ -1013,6 +1205,16 @@ class TaskManager {
             <!-- Kanban View -->
             <div id="task-kanban-container" class="hidden">
                 <div id="task-kanban-board" class="kanban-board"></div>
+            </div>
+
+            <!-- Weekly Planner View -->
+            <div id="task-weekly-container" class="hidden">
+                <div class="weekly-planner-nav">
+                    <button class="btn btn-sm btn-outline" id="weekly-prev"><i class="fas fa-chevron-left"></i></button>
+                    <span class="weekly-planner-title" id="weekly-planner-title">Semana</span>
+                    <button class="btn btn-sm btn-outline" id="weekly-next"><i class="fas fa-chevron-right"></i></button>
+                </div>
+                <div id="task-weekly-planner" class="weekly-planner-grid"></div>
             </div>
         </div>
         `;

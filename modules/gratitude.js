@@ -3,12 +3,20 @@ class GratitudeManager {
     constructor(authManager) {
         this.auth = authManager;
         this.gratitude = [];
+        this.types = [
+            { id: 'pessoas', name: 'Pessoas', icon: 'fa-users', color: '#EC4899' },
+            { id: 'eventos', name: 'Eventos', icon: 'fa-calendar-check', color: '#3B82F6' },
+            { id: 'conquistas', name: 'Conquistas', icon: 'fa-trophy', color: '#F59E0B' },
+            { id: 'aprendizados', name: 'Aprendizados', icon: 'fa-lightbulb', color: '#10B981' },
+            { id: 'geral', name: 'Geral', icon: 'fa-heart', color: '#EF4444' }
+        ];
     }
 
     // Initialize gratitude manager
     init() {
         this.renderGratitude();
         this.updateStats();
+        this.updateStreak();
     }
 
     // Setup event listeners (call after DOM templates are injected)
@@ -39,14 +47,15 @@ class GratitudeManager {
             try {
                 const resp = await this.auth.apiRequest('/api/gratitude', {
                     method: 'POST',
-                    body: JSON.stringify({ text })
+                    body: JSON.stringify({ text, type: document.getElementById('gratitude-type')?.value || 'geral' })
                 });
                 
                 const serverItem = resp.item;
                 const item = {
                     id: serverItem.id,
                     text: serverItem.text,
-                    date: serverItem.date || new Date().toISOString()
+                    date: serverItem.date || new Date().toISOString(),
+                    type: serverItem.type || 'geral'
                 };
                 
                 this.gratitude.unshift(item);
@@ -64,7 +73,8 @@ class GratitudeManager {
             const item = {
                 id: Date.now(),
                 text: text,
-                date: new Date().toISOString()
+                date: new Date().toISOString(),
+                type: document.getElementById('gratitude-type')?.value || 'geral'
             };
             
             this.gratitude.push(item);
@@ -88,14 +98,19 @@ class GratitudeManager {
             return;
         }
 
-        const recentGratitude = this.gratitude.slice(-5).reverse();
+        const recentGratitude = this.gratitude.slice(-10).reverse();
         recentGratitude.forEach(item => {
             const gratitudeElement = document.createElement('div');
             gratitudeElement.className = 'gratitude-item';
             const safeText = window.DomusUtils ? DomusUtils.escapeHTML(item.text) : item.text;
+            const typeObj = this.types.find(t => t.id === (item.type || 'geral')) || this.types[4];
             gratitudeElement.innerHTML = `
-                <i class="fas fa-heart"></i>
-                <span>${safeText}</span>
+                <div class="gratitude-icon" style="color:${typeObj.color}"><i class="fas ${typeObj.icon}"></i></div>
+                <div class="gratitude-body">
+                    <span class="gratitude-text">${safeText}</span>
+                    <span class="gratitude-date">${new Date(item.date).toLocaleDateString('pt-BR')}</span>
+                </div>
+                <span class="gratitude-type-badge" style="background:${typeObj.color}20;color:${typeObj.color}">${typeObj.name}</span>
             `;
             gratitudeList.appendChild(gratitudeElement);
         });
@@ -117,7 +132,8 @@ class GratitudeManager {
                 this.gratitude = resp.gratitude.map(g => ({
                     id: g.id,
                     text: g.text,
-                    date: g.date || new Date().toISOString()
+                    date: g.date || new Date().toISOString(),
+                    type: g.type || 'geral'
                 }));
                 this.renderGratitude();
                 this.updateStats();
@@ -151,6 +167,27 @@ class GratitudeManager {
         }
     }
 
+    // Streak calculation
+    _calcStreak() {
+        if (this.gratitude.length === 0) return 0;
+        const dates = [...new Set(this.gratitude.map(g => new Date(g.date).toISOString().split('T')[0]))].sort().reverse();
+        let streak = 0;
+        const today = new Date();
+        for (let i = 0; i < dates.length; i++) {
+            const expected = new Date(today);
+            expected.setDate(expected.getDate() - i);
+            const expStr = expected.toISOString().split('T')[0];
+            if (dates[i] === expStr) streak++;
+            else break;
+        }
+        return streak;
+    }
+
+    updateStreak() {
+        const streakEl = document.getElementById('gratitude-streak');
+        if (streakEl) streakEl.textContent = this._calcStreak();
+    }
+
     // Generate HTML template
     static getTemplate() {
         return `
@@ -158,6 +195,7 @@ class GratitudeManager {
                 <div class="card-header">
                     <h2 class="card-title"><i class="fas fa-pray"></i> Vida Espiritual</h2>
                     <div class="card-actions">
+                        <div class="gratitude-streak-badge"><i class="fas fa-fire"></i> <span id="gratitude-streak">0</span> dias</div>
                         <button class="icon-btn" id="refresh-quote-btn"><i class="fas fa-sync-alt"></i></button>
                     </div>
                 </div>
@@ -166,11 +204,16 @@ class GratitudeManager {
                     <p class="quote-author" id="quote-author">- Lao Tzu</p>
                 </div>
                 <h3>Lista de Gratidão</h3>
-                <div class="gratitude-list" id="gratitude-list">
-                    <!-- Itens de gratidão serão adicionados aqui -->
-                </div>
-                <div class="add-task">
-                    <input type="text" id="new-gratitude" placeholder="Pelo que você é grato hoje?">
+                <div class="gratitude-list" id="gratitude-list"></div>
+                <div class="add-task" style="gap:8px">
+                    <select id="gratitude-type" class="gratitude-type-select" title="Tipo">
+                        <option value="geral">❤️ Geral</option>
+                        <option value="pessoas">👥 Pessoas</option>
+                        <option value="eventos">📅 Eventos</option>
+                        <option value="conquistas">🏆 Conquistas</option>
+                        <option value="aprendizados">💡 Aprendizados</option>
+                    </select>
+                    <input type="text" id="new-gratitude" placeholder="Pelo que você é grato hoje?" style="flex:1">
                     <button class="btn btn-primary" id="add-gratitude">Adicionar</button>
                 </div>
             </div>
