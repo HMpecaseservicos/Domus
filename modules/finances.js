@@ -39,12 +39,22 @@ class FinanceManager {
             { id: 'dinheiro', name: 'Dinheiro', icon: 'fa-money-bill' },
             { id: 'transferencia', name: 'Transferência', icon: 'fa-exchange-alt' }
         ];
+
+        this.accounts = [];
+        this.accountTypes = [
+            { id: 'checking', name: 'Conta Corrente', icon: 'fa-university', color: '#3B82F6' },
+            { id: 'savings', name: 'Poupança', icon: 'fa-piggy-bank', color: '#10B981' },
+            { id: 'credit', name: 'Cartão de Crédito', icon: 'fa-credit-card', color: '#EF4444' },
+            { id: 'wallet', name: 'Carteira', icon: 'fa-wallet', color: '#F59E0B' },
+            { id: 'investment', name: 'Investimento', icon: 'fa-chart-line', color: '#8B5CF6' }
+        ];
     }
 
     // ===== INIT =====
     init() {
         this._recalcTotals();
         this.renderAll();
+        this.renderAccounts();
     }
 
     setupEventListeners() {
@@ -120,12 +130,14 @@ class FinanceManager {
         const descEl = document.getElementById('fin-description');
         const dateEl = document.getElementById('fin-date');
         const methodEl = document.getElementById('fin-method');
+        const accountEl = document.getElementById('fin-account-select');
 
         const amount = parseFloat(amountEl?.value);
         const category = catEl?.value || '';
         const description = descEl?.value?.trim() || '';
         const date = dateEl?.value ? new Date(dateEl.value + 'T12:00:00').toISOString() : new Date().toISOString();
         const payment_method = methodEl?.value || '';
+        const account_id = accountEl?.value ? parseInt(accountEl.value) : null;
 
         if (!amount || amount <= 0) {
             this.auth.showNotification('Informe um valor válido.', 'warning');
@@ -140,7 +152,7 @@ class FinanceManager {
             try {
                 const resp = await this.auth.apiRequest('/api/finances', {
                     method: 'POST',
-                    body: JSON.stringify({ type, amount, category, description, payment_method, date })
+                    body: JSON.stringify({ type, amount, category, description, payment_method, date, account_id })
                 });
                 const t = this._mapServer(resp.item);
                 this.transactions.unshift(t);
@@ -154,7 +166,7 @@ class FinanceManager {
                 this.auth.showNotification(err.message || 'Erro ao salvar', 'error');
             }
         } else {
-            const t = { id: Date.now(), type, amount, category, description, payment_method, date };
+            const t = { id: Date.now(), type, amount, category, description, payment_method, date, account_id };
             this.transactions.unshift(t);
             this._recalcTotals();
             this._clearForm();
@@ -187,12 +199,13 @@ class FinanceManager {
         const payment_method = document.getElementById(`fin-edit-method-${id}`)?.value || '';
         const dateVal = document.getElementById(`fin-edit-date-${id}`)?.value;
         const date = dateVal ? new Date(dateVal + 'T12:00:00').toISOString() : t.date;
+        const account_id = document.getElementById(`fin-edit-account-${id}`)?.value ? parseInt(document.getElementById(`fin-edit-account-${id}`).value) : null;
 
         if (this.auth.getToken()) {
             try {
                 const resp = await this.auth.apiRequest(`/api/finances/${id}`, {
                     method: 'PUT',
-                    body: JSON.stringify({ type, amount, category, description, payment_method, date })
+                    body: JSON.stringify({ type, amount, category, description, payment_method, date, account_id })
                 });
                 const updated = this._mapServer(resp.item);
                 const idx = this.transactions.findIndex(x => x.id === id);
@@ -203,7 +216,7 @@ class FinanceManager {
             }
         } else {
             const idx = this.transactions.findIndex(x => x.id === id);
-            if (idx !== -1) Object.assign(this.transactions[idx], { type, amount, category, description, payment_method, date });
+            if (idx !== -1) Object.assign(this.transactions[idx], { type, amount, category, description, payment_method, date, account_id });
         }
 
         this.editingId = null;
@@ -510,7 +523,8 @@ class FinanceManager {
             category: item.category || '',
             description: item.description || '',
             payment_method: item.payment_method || '',
-            date: item.date || new Date().toISOString()
+            date: item.date || new Date().toISOString(),
+            account_id: item.account_id || null
         };
     }
 
@@ -557,20 +571,111 @@ class FinanceManager {
         if (btn) btn.innerHTML = '<i class="fas fa-chevron-down"></i> Mais detalhes';
     }
 
+    // ===== ACCOUNTS =====
+    async loadAccounts() {
+        if (!this.auth.getToken()) return;
+        try {
+            const resp = await this.auth.apiRequest('/api/accounts', { method: 'GET' });
+            if (resp && Array.isArray(resp.accounts)) {
+                this.accounts = resp.accounts.map(a => ({ ...a, balance: parseFloat(a.balance) }));
+                this.renderAccounts();
+            }
+        } catch (err) { console.warn('Erro ao carregar contas:', err); }
+    }
+
+    async addAccount() {
+        const nameEl = document.getElementById('fin-account-name');
+        const typeEl = document.getElementById('fin-account-type');
+        const balanceEl = document.getElementById('fin-account-balance');
+        const name = nameEl?.value?.trim();
+        if (!name) { this.auth.showNotification('Informe o nome da conta.', 'warning'); return; }
+        const type = typeEl?.value || 'checking';
+        const balance = parseFloat(balanceEl?.value) || 0;
+        const typeObj = this.accountTypes.find(t => t.id === type);
+
+        if (this.auth.getToken()) {
+            try {
+                const resp = await this.auth.apiRequest('/api/accounts', {
+                    method: 'POST',
+                    body: JSON.stringify({ name, type, balance, icon: typeObj?.icon || 'fa-university', color: typeObj?.color || '#3B82F6' })
+                });
+                this.accounts.push({ ...resp.account, balance: parseFloat(resp.account.balance) });
+            } catch (err) { this.auth.showNotification(err.message || 'Erro', 'error'); return; }
+        } else {
+            this.accounts.push({ id: Date.now(), name, type, balance, icon: typeObj?.icon || 'fa-university', color: typeObj?.color || '#3B82F6' });
+        }
+        if (nameEl) nameEl.value = '';
+        if (balanceEl) balanceEl.value = '';
+        this.renderAccounts();
+        this.saveData();
+        this.auth.showNotification('Conta adicionada!', 'success');
+    }
+
+    async deleteAccount(id) {
+        if (!confirm('Excluir esta conta?')) return;
+        if (this.auth.getToken() && Number.isInteger(id)) {
+            try { await this.auth.apiRequest(`/api/accounts/${id}`, { method: 'DELETE' }); }
+            catch (err) { this.auth.showNotification(err.message || 'Erro', 'error'); return; }
+        }
+        this.accounts = this.accounts.filter(a => a.id !== id);
+        this.renderAccounts();
+        this.saveData();
+        this.auth.showNotification('Conta excluída.', 'info');
+    }
+
+    renderAccounts() {
+        const container = document.getElementById('fin-accounts-list');
+        if (!container) return;
+        if (this.accounts.length === 0) {
+            container.innerHTML = '<div class="fin-empty-cats">Nenhuma conta cadastrada</div>';
+            return;
+        }
+        const total = this.accounts.reduce((s, a) => s + a.balance, 0);
+        container.innerHTML = this.accounts.map(a => {
+            const typeObj = this.accountTypes.find(t => t.id === a.type) || { name: a.type, icon: 'fa-university', color: '#9CA3AF' };
+            return `
+            <div class="fin-account-item">
+                <div class="fin-account-icon" style="background:${a.color || typeObj.color}20;color:${a.color || typeObj.color}">
+                    <i class="fas ${a.icon || typeObj.icon}"></i>
+                </div>
+                <div class="fin-account-info">
+                    <span class="fin-account-name">${this._escapeHTML(a.name)}</span>
+                    <span class="fin-account-type">${typeObj.name}</span>
+                </div>
+                <div class="fin-account-balance ${a.balance >= 0 ? 'positive' : 'negative'}">${this._formatBRL(a.balance)}</div>
+                <button class="fin-account-del" onclick="window.app.financeManager.deleteAccount(${a.id})" title="Excluir"><i class="fas fa-times"></i></button>
+            </div>`;
+        }).join('') + `
+        <div class="fin-accounts-total">
+            <span>Total:</span>
+            <span class="${total >= 0 ? 'positive' : 'negative'}">${this._formatBRL(total)}</span>
+        </div>`;
+
+        // Update account select in add form
+        const acSelect = document.getElementById('fin-account-select');
+        if (acSelect) {
+            const current = acSelect.value;
+            acSelect.innerHTML = '<option value="">Sem conta</option>' +
+                this.accounts.map(a => `<option value="${a.id}" ${String(a.id) === current ? 'selected' : ''}>${this._escapeHTML(a.name)}</option>`).join('');
+        }
+    }
+
     // ===== SERVER DATA =====
     async loadServerData() {
         if (!this.auth.getToken()) return;
         try {
             const m = this.viewMonth + 1;
             const y = this.viewYear;
-            const resp = await this.auth.apiRequest(`/api/finances?month=${m}&year=${y}`, { method: 'GET' });
-            if (resp && Array.isArray(resp.finances)) {
-                // Merge: keep non-month data, replace month data
+            const [finResp] = await Promise.all([
+                this.auth.apiRequest(`/api/finances?month=${m}&year=${y}`, { method: 'GET' }),
+                this.loadAccounts()
+            ]);
+            if (finResp && Array.isArray(finResp.finances)) {
                 const otherTx = this.transactions.filter(t => {
                     const d = new Date(t.date);
                     return !(d.getMonth() === this.viewMonth && d.getFullYear() === this.viewYear);
                 });
-                const monthTx = resp.finances.map(f => this._mapServer(f));
+                const monthTx = finResp.finances.map(f => this._mapServer(f));
                 this.transactions = [...monthTx, ...otherTx];
                 this._recalcTotals();
                 this.renderAll();
@@ -585,7 +690,8 @@ class FinanceManager {
         try {
             localStorage.setItem(this.auth.getStorageKey('finances'), JSON.stringify({
                 transactions: this.transactions,
-                budgetGoal: this.budgetGoal
+                budgetGoal: this.budgetGoal,
+                accounts: this.accounts
             }));
         } catch (e) {
             console.warn('Falha ao salvar finanças:', e);
@@ -603,6 +709,7 @@ class FinanceManager {
                         amount: parseFloat(t.amount)
                     }));
                     this.budgetGoal = parsed.budgetGoal || 0;
+                    this.accounts = parsed.accounts || [];
                     this._recalcTotals();
                 }
             }
@@ -714,6 +821,9 @@ class FinanceManager {
                         <option value="dinheiro">💵 Dinheiro</option>
                         <option value="transferencia">🏦 Transferência</option>
                     </select>
+                    <select id="fin-account-select" class="fin-add-input">
+                        <option value="">Sem conta</option>
+                    </select>
                 </div>
                 <button class="fin-expand-btn" id="fin-expand-toggle"><i class="fas fa-chevron-down"></i> Mais detalhes</button>
             </div>
@@ -752,6 +862,24 @@ class FinanceManager {
                         <option value="outros">Outros</option>
                     </select>
                 </div>
+            </div>
+
+            <!-- Accounts Section -->
+            <div class="fin-section-card">
+                <h3 class="fin-section-title"><i class="fas fa-wallet"></i> Contas</h3>
+                <div class="fin-account-add-row">
+                    <input type="text" id="fin-account-name" class="fin-add-input" placeholder="Nome da conta" />
+                    <select id="fin-account-type" class="fin-add-input">
+                        <option value="checking">🏦 Conta Corrente</option>
+                        <option value="savings">🐷 Poupança</option>
+                        <option value="credit">💳 Cartão de Crédito</option>
+                        <option value="wallet">👛 Carteira</option>
+                        <option value="investment">📈 Investimento</option>
+                    </select>
+                    <input type="number" id="fin-account-balance" class="fin-add-input" placeholder="Saldo R$" step="0.01" />
+                    <button class="fin-add-btn" onclick="window.app.financeManager.addAccount()"><i class="fas fa-plus"></i></button>
+                </div>
+                <div id="fin-accounts-list"></div>
             </div>
 
             <!-- Transaction List -->

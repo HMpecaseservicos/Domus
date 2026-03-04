@@ -8,6 +8,7 @@ class DomusApp {
         this.gratitudeManager = new GratitudeManager(this.authManager);
         this.purposeManager = new PurposeManager(this.authManager);
         this.patternsManager = new PatternsManager(this.authManager);
+        this.habitManager = new HabitManager(this.authManager);
         
         this.settings = {
             theme: 'light',
@@ -49,6 +50,7 @@ class DomusApp {
         this.gratitudeManager.gratitude = [];
         this.purposeManager.purpose = { mission: '', goals: '', values: '' };
         this.patternsManager.patterns = [];
+        this.habitManager.habits = [];
     }
 
     /** Show/hide app vs auth screen */
@@ -108,6 +110,7 @@ class DomusApp {
         this.gratitudeManager.setupEventListeners();
         this.purposeManager.setupEventListeners();
         this.patternsManager.setupEventListeners();
+        this.habitManager.setupEventListeners();
     }
 
     // Initialize all modules
@@ -118,6 +121,7 @@ class DomusApp {
         this.gratitudeManager.init();
         this.purposeManager.init();
         this.patternsManager.init();
+        this.habitManager.init();
     }
 
     // Setup global event listeners
@@ -198,7 +202,8 @@ class DomusApp {
                 this.financeManager.loadServerData(),
                 this.thoughtsManager.loadServerData(),
                 this.gratitudeManager.loadServerData(),
-                this.purposeManager.loadServerData()
+                this.purposeManager.loadServerData(),
+                this.habitManager.loadServerData()
             ]);
             
             this.authManager.showNotification('Dados sincronizados do servidor.', 'success');
@@ -220,6 +225,7 @@ class DomusApp {
             gratitude: this.gratitudeManager.gratitude,
             purpose: this.purposeManager.purpose,
             patterns: this.patternsManager.patterns,
+            habits: this.habitManager.exportData(),
             settings: this.settings,
             exportDate: new Date().toISOString()
         };
@@ -280,6 +286,9 @@ class DomusApp {
                 if (importedData.patterns) {
                     this.patternsManager.patterns = importedData.patterns;
                 }
+                if (importedData.habits) {
+                    this.habitManager.importData(importedData.habits);
+                }
                 if (importedData.settings) {
                     this.settings = { ...this.settings, ...importedData.settings };
                 }
@@ -311,6 +320,7 @@ class DomusApp {
         this.thoughtsManager.thoughts = [];
         this.gratitudeManager.gratitude = [];
         this.patternsManager.patterns = [];
+        this.habitManager.habits = [];
 
         this.initializeModules();
         this.saveData();
@@ -336,6 +346,7 @@ class DomusApp {
         this.gratitudeManager.saveData();
         this.purposeManager.saveData();
         this.patternsManager.saveData();
+        this.habitManager.saveData();
         
         try {
             localStorage.setItem(this.authManager.getStorageKey('settings'), JSON.stringify(this.settings));
@@ -351,6 +362,7 @@ class DomusApp {
         this.gratitudeManager.loadData();
         this.purposeManager.loadData();
         this.patternsManager.loadData();
+        this.habitManager.loadData();
         
         try {
             const raw = localStorage.getItem(this.authManager.getStorageKey('settings'));

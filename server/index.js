@@ -389,6 +389,14 @@ app.get('/api/me', authMiddleware, async (req, res) => {
 app.get('/api/tasks', authMiddleware, async (req, res) => {
   try {
     const tasks = await all('SELECT * FROM tasks WHERE user_id = ? ORDER BY sort_order ASC, created_at DESC', [req.user.id]);
+    // Attach subtasks from task_subtasks table for each task
+    const subtasks = await all('SELECT * FROM task_subtasks WHERE task_id IN (SELECT id FROM tasks WHERE user_id = ?) ORDER BY sort_order ASC', [req.user.id]);
+    const subtasksMap = {};
+    subtasks.forEach(s => {
+      if (!subtasksMap[s.task_id]) subtasksMap[s.task_id] = [];
+      subtasksMap[s.task_id].push(s);
+    });
+    tasks.forEach(t => { t.subtask_items = subtasksMap[t.id] || []; });
     res.json({ tasks });
   } catch (err) {
     console.error(err);
@@ -414,13 +422,22 @@ app.patch('/api/tasks/reorder', authMiddleware, async (req, res) => {
 app.post('/api/tasks', authMiddleware, validateTask, handleValidationErrors, async (req, res) => {
   const { text, priority, category, due_date, notes, status, subtasks, tags, estimated_minutes, recurrence } = req.body;
   try {
-    const subtasksJson = JSON.stringify(Array.isArray(subtasks) ? subtasks : []);
     const tagsStr = Array.isArray(tags) ? tags.join(',') : (tags || '');
     const result = await run(
-      'INSERT INTO tasks (user_id, text, priority, category, due_date, notes, status, subtasks, tags, estimated_minutes, recurrence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
-      [req.user.id, text, priority || 'low', category || '', due_date || null, notes || '', status || 'todo', subtasksJson, tagsStr, estimated_minutes || 0, recurrence || '']
+      'INSERT INTO tasks (user_id, text, priority, category, due_date, notes, status, tags, estimated_minutes, recurrence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
+      [req.user.id, text, priority || 'low', category || '', due_date || null, notes || '', status || 'todo', tagsStr, estimated_minutes || 0, recurrence || '']
     );
-    const task = await get('SELECT * FROM tasks WHERE id = ?', [result.lastID]);
+    const taskId = result.lastID;
+    // Insert subtasks into task_subtasks table
+    if (Array.isArray(subtasks) && subtasks.length > 0) {
+      for (let i = 0; i < subtasks.length; i++) {
+        const sub = subtasks[i];
+        await run('INSERT INTO task_subtasks (task_id, text, completed, sort_order) VALUES (?, ?, ?, ?)',
+          [taskId, sub.text || sub, !!sub.done || !!sub.completed, i]);
+      }
+    }
+    const task = await get('SELECT * FROM tasks WHERE id = ?', [taskId]);
+    task.subtask_items = await all('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY sort_order ASC', [taskId]);
     res.json({ task });
   } catch (err) {
     console.error(err);
@@ -438,11 +455,13 @@ app.patch('/api/tasks/:id/toggle', authMiddleware, validateId, handleValidationE
   try {
     const task = await get('SELECT * FROM tasks WHERE id = ? AND user_id = ?', [id, req.user.id]);
     if (!task) return res.status(404).json({ message: 'Not found' });
-    const completed = task.completed ? 0 : 1;
+    const completed = !task.completed;
     const status = completed ? 'done' : 'todo';
     const completedAt = completed ? new Date().toISOString() : null;
     await run('UPDATE tasks SET completed = ?, status = ?, completed_at = ? WHERE id = ?', [completed, status, completedAt, id]);
     const updated = await get('SELECT * FROM tasks WHERE id = ?', [id]);
+    // Attach subtasks from task_subtasks table
+    updated.subtask_items = await all('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY sort_order ASC', [id]);
     res.json({ task: updated });
   } catch (err) {
     console.error(err);
@@ -528,12 +547,12 @@ app.get('/api/finances', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/finances', authMiddleware, validateFinance, handleValidationErrors, async (req, res) => {
-  const { type, amount, category, description, payment_method, date } = req.body;
+  const { type, amount, category, description, payment_method, date, account_id } = req.body;
   try {
     const dateVal = date || new Date().toISOString();
     const result = await run(
-      'INSERT INTO finances (user_id, type, amount, category, description, payment_method, date) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id',
-      [req.user.id, type, amount, category || '', description || '', payment_method || '', dateVal]
+      'INSERT INTO finances (user_id, type, amount, category, description, payment_method, date, account_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
+      [req.user.id, type, amount, category || '', description || '', payment_method || '', dateVal, account_id || null]
     );
     const item = await get('SELECT * FROM finances WHERE id = ?', [result.lastID]);
     res.json({ item });
@@ -590,17 +609,25 @@ app.put('/api/tasks/:id', authMiddleware, validateId, validateTask, handleValida
   try {
     const task = await get('SELECT * FROM tasks WHERE id = ? AND user_id = ?', [id, req.user.id]);
     if (!task) return res.status(404).json({ message: 'Not found' });
-    const subtasksJson = subtasks !== undefined ? JSON.stringify(Array.isArray(subtasks) ? subtasks : []) : (task.subtasks || '[]');
     const tagsStr = tags !== undefined ? (Array.isArray(tags) ? tags.join(',') : (tags || '')) : (task.tags || '');
-    // If transitioning to done, set completed_at
     const newStatus = status || task.status || 'todo';
-    const newCompleted = newStatus === 'done' ? 1 : 0;
+    const newCompleted = newStatus === 'done';
     const completedAt = newStatus === 'done' && task.status !== 'done' ? new Date().toISOString() : (newStatus !== 'done' ? null : task.completed_at);
     await run(
-      'UPDATE tasks SET text = ?, priority = ?, category = ?, due_date = ?, notes = ?, sort_order = ?, status = ?, completed = ?, subtasks = ?, tags = ?, estimated_minutes = ?, recurrence = ?, completed_at = ? WHERE id = ?',
-      [text, priority || task.priority, category ?? task.category, due_date ?? task.due_date, notes ?? task.notes, sort_order ?? task.sort_order, newStatus, newCompleted, subtasksJson, tagsStr, estimated_minutes ?? task.estimated_minutes ?? 0, recurrence ?? task.recurrence ?? '', completedAt, id]
+      'UPDATE tasks SET text = ?, priority = ?, category = ?, due_date = ?, notes = ?, sort_order = ?, status = ?, completed = ?, tags = ?, estimated_minutes = ?, recurrence = ?, completed_at = ? WHERE id = ?',
+      [text, priority || task.priority, category ?? task.category, due_date ?? task.due_date, notes ?? task.notes, sort_order ?? task.sort_order, newStatus, newCompleted, tagsStr, estimated_minutes ?? task.estimated_minutes ?? 0, recurrence ?? task.recurrence ?? '', completedAt, id]
     );
+    // Sync subtasks if provided
+    if (subtasks !== undefined && Array.isArray(subtasks)) {
+      await run('DELETE FROM task_subtasks WHERE task_id = ?', [id]);
+      for (let i = 0; i < subtasks.length; i++) {
+        const sub = subtasks[i];
+        await run('INSERT INTO task_subtasks (task_id, text, completed, sort_order) VALUES (?, ?, ?, ?)',
+          [id, sub.text || sub, !!sub.done || !!sub.completed, i]);
+      }
+    }
     const updated = await get('SELECT * FROM tasks WHERE id = ?', [id]);
+    updated.subtask_items = await all('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY sort_order ASC', [id]);
     res.json({ task: updated });
   } catch (err) {
     console.error(err);
@@ -610,13 +637,13 @@ app.put('/api/tasks/:id', authMiddleware, validateId, validateTask, handleValida
 
 app.put('/api/finances/:id', authMiddleware, validateId, validateFinance, handleValidationErrors, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { type, amount, category, description, payment_method, date } = req.body;
+  const { type, amount, category, description, payment_method, date, account_id } = req.body;
   try {
     const item = await get('SELECT * FROM finances WHERE id = ? AND user_id = ?', [id, req.user.id]);
     if (!item) return res.status(404).json({ message: 'Not found' });
     await run(
-      'UPDATE finances SET type = ?, amount = ?, category = ?, description = ?, payment_method = ?, date = ? WHERE id = ?',
-      [type, amount, category || '', description || '', payment_method ?? item.payment_method ?? '', date || item.date, id]
+      'UPDATE finances SET type = ?, amount = ?, category = ?, description = ?, payment_method = ?, date = ?, account_id = ? WHERE id = ?',
+      [type, amount, category || '', description || '', payment_method ?? item.payment_method ?? '', date || item.date, account_id ?? item.account_id ?? null, id]
     );
     const updated = await get('SELECT * FROM finances WHERE id = ?', [id]);
     res.json({ item: updated });
@@ -654,6 +681,234 @@ app.put('/api/purpose', authMiddleware, [
     }
     const updated = await get('SELECT * FROM purpose WHERE user_id = ?', [req.user.id]);
     res.json({ purpose: updated });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// ===== ACCOUNTS CRUD =====
+app.get('/api/accounts', authMiddleware, async (req, res) => {
+  try {
+    const accounts = await all('SELECT * FROM accounts WHERE user_id = ? ORDER BY created_at ASC', [req.user.id]);
+    res.json({ accounts });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.post('/api/accounts', authMiddleware, [
+  body('name').isLength({ min: 1, max: 100 }).withMessage('Nome obrigatório').trim().escape(),
+  body('type').optional().isIn(['checking', 'savings', 'credit', 'wallet', 'investment']).withMessage('Tipo inválido'),
+  body('balance').optional().isFloat().toFloat(),
+], handleValidationErrors, async (req, res) => {
+  const { name, type, balance, icon, color } = req.body;
+  try {
+    const result = await run(
+      'INSERT INTO accounts (user_id, name, type, balance, icon, color) VALUES (?, ?, ?, ?, ?, ?) RETURNING id',
+      [req.user.id, name, type || 'checking', balance || 0, icon || 'fa-university', color || '#3B82F6']
+    );
+    const account = await get('SELECT * FROM accounts WHERE id = ?', [result.lastID]);
+    res.json({ account });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.put('/api/accounts/:id', authMiddleware, validateId, [
+  body('name').isLength({ min: 1, max: 100 }).withMessage('Nome obrigatório').trim().escape(),
+  body('type').optional().isIn(['checking', 'savings', 'credit', 'wallet', 'investment']),
+  body('balance').optional().isFloat().toFloat(),
+], handleValidationErrors, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { name, type, balance, icon, color } = req.body;
+  try {
+    const account = await get('SELECT * FROM accounts WHERE id = ? AND user_id = ?', [id, req.user.id]);
+    if (!account) return res.status(404).json({ message: 'Not found' });
+    await run('UPDATE accounts SET name = ?, type = ?, balance = ?, icon = ?, color = ? WHERE id = ?',
+      [name || account.name, type || account.type, balance ?? account.balance, icon || account.icon, color || account.color, id]);
+    const updated = await get('SELECT * FROM accounts WHERE id = ?', [id]);
+    res.json({ account: updated });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.delete('/api/accounts/:id', authMiddleware, validateId, handleValidationErrors, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  try {
+    const account = await get('SELECT * FROM accounts WHERE id = ? AND user_id = ?', [id, req.user.id]);
+    if (!account) return res.status(404).json({ message: 'Not found' });
+    await run('DELETE FROM accounts WHERE id = ?', [id]);
+    res.json({ message: 'Deleted' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// ===== HABITS CRUD =====
+app.get('/api/habits', authMiddleware, async (req, res) => {
+  try {
+    const habits = await all('SELECT * FROM habits WHERE user_id = ? ORDER BY created_at ASC', [req.user.id]);
+    // Attach logs for last 30 days
+    const since = new Date();
+    since.setDate(since.getDate() - 30);
+    const dateStr = since.toISOString().split('T')[0];
+    const logs = await all(
+      'SELECT * FROM habit_logs WHERE habit_id IN (SELECT id FROM habits WHERE user_id = ?) AND date >= ? ORDER BY date ASC',
+      [req.user.id, dateStr]
+    );
+    const logsMap = {};
+    logs.forEach(l => {
+      if (!logsMap[l.habit_id]) logsMap[l.habit_id] = [];
+      logsMap[l.habit_id].push(l);
+    });
+    habits.forEach(h => { h.logs = logsMap[h.id] || []; });
+    res.json({ habits });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.post('/api/habits', authMiddleware, [
+  body('name').isLength({ min: 1, max: 200 }).withMessage('Nome obrigatório').trim().escape(),
+  body('category').optional().isLength({ max: 60 }).trim().escape(),
+  body('frequency').optional().isIn(['daily', 'weekly', 'monthly']).withMessage('Frequência inválida'),
+  body('target').optional().isInt({ min: 1, max: 100 }).toInt(),
+], handleValidationErrors, async (req, res) => {
+  const { name, category, frequency, target, icon, color } = req.body;
+  try {
+    const result = await run(
+      'INSERT INTO habits (user_id, name, category, frequency, target, icon, color) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id',
+      [req.user.id, name, category || '', frequency || 'daily', target || 1, icon || 'fa-star', color || '#6366F1']
+    );
+    const habit = await get('SELECT * FROM habits WHERE id = ?', [result.lastID]);
+    habit.logs = [];
+    res.json({ habit });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.put('/api/habits/:id', authMiddleware, validateId, [
+  body('name').isLength({ min: 1, max: 200 }).withMessage('Nome obrigatório').trim().escape(),
+  body('frequency').optional().isIn(['daily', 'weekly', 'monthly']),
+  body('target').optional().isInt({ min: 1, max: 100 }).toInt(),
+], handleValidationErrors, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { name, category, frequency, target, icon, color, active } = req.body;
+  try {
+    const habit = await get('SELECT * FROM habits WHERE id = ? AND user_id = ?', [id, req.user.id]);
+    if (!habit) return res.status(404).json({ message: 'Not found' });
+    await run('UPDATE habits SET name = ?, category = ?, frequency = ?, target = ?, icon = ?, color = ?, active = ? WHERE id = ?',
+      [name || habit.name, category ?? habit.category, frequency || habit.frequency, target ?? habit.target, icon || habit.icon, color || habit.color, active !== undefined ? active : habit.active, id]);
+    const updated = await get('SELECT * FROM habits WHERE id = ?', [id]);
+    updated.logs = await all('SELECT * FROM habit_logs WHERE habit_id = ? AND date >= ? ORDER BY date ASC',
+      [id, new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]]);
+    res.json({ habit: updated });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.delete('/api/habits/:id', authMiddleware, validateId, handleValidationErrors, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  try {
+    const habit = await get('SELECT * FROM habits WHERE id = ? AND user_id = ?', [id, req.user.id]);
+    if (!habit) return res.status(404).json({ message: 'Not found' });
+    await run('DELETE FROM habits WHERE id = ?', [id]);
+    res.json({ message: 'Deleted' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// ===== HABIT LOGS =====
+app.post('/api/habits/:id/log', authMiddleware, validateId, handleValidationErrors, async (req, res) => {
+  const habitId = parseInt(req.params.id, 10);
+  const { date, value, notes } = req.body;
+  try {
+    const habit = await get('SELECT * FROM habits WHERE id = ? AND user_id = ?', [habitId, req.user.id]);
+    if (!habit) return res.status(404).json({ message: 'Not found' });
+    const logDate = date || new Date().toISOString().split('T')[0];
+    // Upsert: insert or update
+    const existing = await get('SELECT * FROM habit_logs WHERE habit_id = ? AND date = ?', [habitId, logDate]);
+    if (existing) {
+      await run('UPDATE habit_logs SET value = ?, notes = ? WHERE id = ?', [value ?? 1, notes || '', existing.id]);
+    } else {
+      await run('INSERT INTO habit_logs (habit_id, date, value, notes) VALUES (?, ?, ?, ?)',
+        [habitId, logDate, value ?? 1, notes || '']);
+    }
+    const log = await get('SELECT * FROM habit_logs WHERE habit_id = ? AND date = ?', [habitId, logDate]);
+    res.json({ log });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.delete('/api/habits/:id/log', authMiddleware, validateId, handleValidationErrors, async (req, res) => {
+  const habitId = parseInt(req.params.id, 10);
+  const { date } = req.body;
+  try {
+    const habit = await get('SELECT * FROM habits WHERE id = ? AND user_id = ?', [habitId, req.user.id]);
+    if (!habit) return res.status(404).json({ message: 'Not found' });
+    const logDate = date || new Date().toISOString().split('T')[0];
+    await run('DELETE FROM habit_logs WHERE habit_id = ? AND date = ?', [habitId, logDate]);
+    res.json({ message: 'Deleted' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// ===== TASK SUBTASKS CRUD (table-based) =====
+app.post('/api/tasks/:id/subtasks', authMiddleware, validateId, handleValidationErrors, async (req, res) => {
+  const taskId = parseInt(req.params.id, 10);
+  const { text } = req.body;
+  try {
+    const task = await get('SELECT * FROM tasks WHERE id = ? AND user_id = ?', [taskId, req.user.id]);
+    if (!task) return res.status(404).json({ message: 'Not found' });
+    const maxOrder = await get('SELECT COALESCE(MAX(sort_order), -1) as max_order FROM task_subtasks WHERE task_id = ?', [taskId]);
+    const result = await run('INSERT INTO task_subtasks (task_id, text, sort_order) VALUES (?, ?, ?) RETURNING id',
+      [taskId, text, (maxOrder?.max_order ?? -1) + 1]);
+    const subtask = await get('SELECT * FROM task_subtasks WHERE id = ?', [result.lastID]);
+    res.json({ subtask });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.patch('/api/subtasks/:id/toggle', authMiddleware, validateId, handleValidationErrors, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  try {
+    const sub = await get('SELECT ts.*, t.user_id FROM task_subtasks ts JOIN tasks t ON ts.task_id = t.id WHERE ts.id = ?', [id]);
+    if (!sub || sub.user_id !== req.user.id) return res.status(404).json({ message: 'Not found' });
+    await run('UPDATE task_subtasks SET completed = ? WHERE id = ?', [!sub.completed, id]);
+    const updated = await get('SELECT * FROM task_subtasks WHERE id = ?', [id]);
+    res.json({ subtask: updated });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+app.delete('/api/subtasks/:id', authMiddleware, validateId, handleValidationErrors, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  try {
+    const sub = await get('SELECT ts.*, t.user_id FROM task_subtasks ts JOIN tasks t ON ts.task_id = t.id WHERE ts.id = ?', [id]);
+    if (!sub || sub.user_id !== req.user.id) return res.status(404).json({ message: 'Not found' });
+    await run('DELETE FROM task_subtasks WHERE id = ?', [id]);
+    res.json({ message: 'Deleted' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Internal error' });

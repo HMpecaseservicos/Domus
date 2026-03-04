@@ -219,6 +219,83 @@ async function init() {
     await client.query('CREATE INDEX IF NOT EXISTS idx_finances_user_id ON finances(user_id);');
     await client.query('CREATE INDEX IF NOT EXISTS idx_gratitude_user_id ON gratitude(user_id);');
 
+    // ===== MIGRATION: completed INTEGER -> BOOLEAN =====
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE tasks ALTER COLUMN completed SET DEFAULT false;
+        ALTER TABLE tasks ALTER COLUMN completed TYPE BOOLEAN USING completed::int::boolean;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+
+    // ===== NEW TABLE: task_subtasks (replaces JSON column) =====
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS task_subtasks (
+        id SERIAL PRIMARY KEY,
+        task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        text TEXT NOT NULL,
+        completed BOOLEAN DEFAULT false,
+        sort_order INTEGER DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_task_subtasks_task_id ON task_subtasks(task_id);');
+
+    // ===== NEW TABLE: accounts =====
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS accounts (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name VARCHAR(100) NOT NULL,
+        type VARCHAR(30) DEFAULT 'checking',
+        balance DECIMAL(14,2) DEFAULT 0,
+        icon VARCHAR(30) DEFAULT 'fa-university',
+        color VARCHAR(10) DEFAULT '#3B82F6',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON accounts(user_id);');
+
+    // Add account_id to finances
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE finances ADD COLUMN IF NOT EXISTS account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+
+    // ===== NEW TABLE: habits =====
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS habits (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name VARCHAR(200) NOT NULL,
+        category VARCHAR(60) DEFAULT '',
+        frequency VARCHAR(20) DEFAULT 'daily',
+        target INTEGER DEFAULT 1,
+        icon VARCHAR(30) DEFAULT 'fa-star',
+        color VARCHAR(10) DEFAULT '#6366F1',
+        active BOOLEAN DEFAULT true,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_habits_user_id ON habits(user_id);');
+
+    // ===== NEW TABLE: habit_logs =====
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS habit_logs (
+        id SERIAL PRIMARY KEY,
+        habit_id INTEGER NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+        date DATE NOT NULL DEFAULT CURRENT_DATE,
+        value INTEGER DEFAULT 1,
+        notes TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(habit_id, date)
+      );
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_habit_logs_habit_id ON habit_logs(habit_id);');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_habit_logs_date ON habit_logs(date);');
+
     await client.query('COMMIT');
     console.log('PostgreSQL database initialized with tables and indexes');
   } catch (err) {

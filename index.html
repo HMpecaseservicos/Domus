@@ -151,6 +151,12 @@
                         <span class="nav-text">Padrões</span>
                     </a>
                 </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-view="habits" title="Hábitos">
+                        <i class="fas fa-repeat"></i>
+                        <span class="nav-text">Hábitos</span>
+                    </a>
+                </li>
             </ul>
 
             <div class="nav-divider"></div>
@@ -351,6 +357,13 @@
             </div>
         </section>
 
+        <!-- ===== VIEW: HABITS ===== -->
+        <section class="view" id="view-habits">
+            <div class="view-content">
+                <div id="module-habits"></div>
+            </div>
+        </section>
+
         <!-- ===== VIEW: DATA MANAGEMENT ===== -->
         <section class="view" id="view-data">
             <div class="view-content">
@@ -416,6 +429,9 @@
                 </button>
                 <button class="bottom-nav-more-item" data-view="patterns">
                     <i class="fas fa-chart-line"></i> Padrões
+                </button>
+                <button class="bottom-nav-more-item" data-view="habits">
+                    <i class="fas fa-repeat"></i> Hábitos
                 </button>
                 <button class="bottom-nav-more-item" data-view="data">
                     <i class="fas fa-database"></i> Dados
@@ -526,6 +542,7 @@
     <script src="modules/gratitude.js"></script>
     <script src="modules/purpose.js"></script>
     <script src="modules/patterns.js"></script>
+    <script src="modules/habits.js"></script>
     <script src="modules/app.js"></script>
 
     <script>
@@ -732,7 +749,7 @@
             // Wait for all module classes, then bootstrap
             const initApp = () => {
                 if (!window.DomusApp || !window.TaskManager || !window.FinanceManager ||
-                    !window.ThoughtsManager || !window.GratitudeManager || !window.PurposeManager || !window.PatternsManager) {
+                    !window.ThoughtsManager || !window.GratitudeManager || !window.PurposeManager || !window.PatternsManager || !window.HabitManager) {
                     setTimeout(initApp, 50);
                     return;
                 }
@@ -744,6 +761,7 @@
                 document.getElementById('module-gratitude').innerHTML = GratitudeManager.getTemplate();
                 document.getElementById('module-purpose').innerHTML = PurposeManager.getTemplate();
                 document.getElementById('module-patterns').innerHTML = PatternsManager.getTemplate();
+                document.getElementById('module-habits').innerHTML = HabitManager.getTemplate();
 
                 // Create app
                 window.app = new DomusApp();
@@ -786,6 +804,7 @@
                 gratitude: { title: 'Vida Espiritual',        subtitle: 'Gratidão e reflexões diárias' },
                 purpose:   { title: 'Propósito de Vida',      subtitle: 'Missão, metas e valores' },
                 patterns:  { title: 'Análise de Padrões',     subtitle: 'Insights comportamentais' },
+                habits:    { title: 'Hábitos',                 subtitle: 'Acompanhe seus hábitos diários' },
                 data:      { title: 'Gerenciamento de Dados',  subtitle: 'Backup, importação e limpeza' }
             };
 

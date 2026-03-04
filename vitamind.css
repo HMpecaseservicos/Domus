@@ -4642,3 +4642,186 @@ textarea:focus,
     background: #6C63FF;
     color: #fff;
 }
+
+/* ==========================================
+   HABITS MODULE
+   ========================================== */
+.habit-module { display: flex; flex-direction: column; gap: 16px; }
+
+/* Stats Card */
+.habit-stats-card {
+    background: var(--card-bg);
+    border-radius: 16px;
+    padding: 24px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    border: 1px solid var(--border-color);
+}
+.habit-stats-ring-wrap { position: relative; width: 100px; height: 100px; flex-shrink: 0; }
+.habit-ring-svg { width: 100%; height: 100%; }
+.habit-ring-svg circle:last-child { transition: stroke-dashoffset 0.6s ease; }
+.habit-ring-text {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+}
+.habit-ring-text span { font-size: 1.5rem; font-weight: 700; color: var(--text-primary); }
+.habit-ring-text small { font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase; }
+.habit-stats-grid { display: flex; gap: 16px; flex: 1; justify-content: space-around; }
+.habit-stat-item { text-align: center; }
+.habit-stat-value { font-size: 1.3rem; font-weight: 700; color: var(--text-primary); }
+.habit-stat-label { font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px; }
+
+/* Add Habit */
+.habit-add-card {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 16px;
+    border: 1px solid var(--border-color);
+}
+.habit-add-row { display: flex; gap: 8px; }
+.habit-add-input {
+    flex: 1; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--border-color);
+    background: var(--input-bg); color: var(--text-primary); font-size: 0.9rem; outline: none;
+    transition: border-color 0.2s;
+}
+.habit-add-input:focus { border-color: var(--accent-primary); }
+.habit-add-btn {
+    width: 42px; height: 42px; border-radius: 10px; border: none;
+    background: var(--accent-primary); color: #fff; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 1rem;
+    transition: transform 0.15s, opacity 0.15s; flex-shrink: 0;
+}
+.habit-add-btn:active { transform: scale(0.92); }
+.habit-add-details { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+
+/* Filters */
+.habit-filters { display: flex; gap: 8px; }
+.habit-filter-chip {
+    padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border-color);
+    background: transparent; color: var(--text-secondary); font-size: 0.8rem;
+    cursor: pointer; transition: all 0.2s;
+}
+.habit-filter-chip.active {
+    background: var(--accent-primary); color: #fff; border-color: var(--accent-primary);
+}
+
+/* Habit Card */
+.habit-card {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 16px;
+    border: 1px solid var(--border-color);
+    margin-bottom: 12px;
+    transition: box-shadow 0.2s;
+}
+.habit-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+.habit-card.done-today { border-left: 3px solid var(--success-color); }
+.habit-card.inactive { opacity: 0.5; }
+
+.habit-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.habit-card-left { display: flex; align-items: center; gap: 12px; }
+.habit-icon {
+    width: 40px; height: 40px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center; font-size: 1.1rem;
+}
+.habit-info { display: flex; flex-direction: column; }
+.habit-name { font-weight: 600; color: var(--text-primary); font-size: 0.95rem; }
+.habit-meta { font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px; }
+
+.habit-card-right { display: flex; align-items: center; gap: 12px; }
+.habit-check-btn {
+    width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--border-color);
+    background: transparent; color: var(--text-secondary); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 1.2rem;
+    transition: all 0.2s;
+}
+.habit-check-btn.checked {
+    background: var(--success-color); border-color: var(--success-color); color: #fff;
+}
+.habit-streak { font-size: 0.85rem; color: var(--text-secondary); display: flex; align-items: center; gap: 4px; }
+.habit-streak.active { color: #F59E0B; }
+.habit-streak i { font-size: 0.9rem; }
+
+/* Calendar Heatmap */
+.habit-calendar { margin-bottom: 8px; }
+.habit-cal-grid {
+    display: grid;
+    grid-template-columns: repeat(15, 1fr);
+    gap: 3px;
+}
+.habit-cal-day {
+    aspect-ratio: 1; border-radius: 4px; font-size: 0.6rem;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--input-bg); color: var(--text-secondary);
+    cursor: pointer; transition: all 0.15s; border: 1px solid transparent;
+}
+.habit-cal-day.logged { color: #fff; font-weight: 600; }
+.habit-cal-day.today { border: 2px solid var(--accent-primary); font-weight: 700; }
+.habit-cal-day:hover { transform: scale(1.15); }
+
+/* Card Actions */
+.habit-card-actions {
+    display: flex; gap: 4px; justify-content: flex-end; padding-top: 8px;
+    border-top: 1px solid var(--border-color);
+}
+.habit-card-actions button {
+    width: 30px; height: 30px; border-radius: 6px; border: none;
+    background: transparent; color: var(--text-secondary); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 0.8rem;
+    transition: all 0.2s;
+}
+.habit-card-actions button:hover { background: var(--input-bg); color: var(--text-primary); }
+
+/* Empty State */
+.habit-empty {
+    text-align: center; padding: 40px 20px; color: var(--text-secondary);
+}
+.habit-empty i { font-size: 2.5rem; margin-bottom: 12px; opacity: 0.3; }
+.habit-empty p { font-size: 0.9rem; }
+
+/* ==========================================
+   FINANCE ACCOUNTS
+   ========================================== */
+.fin-account-add-row {
+    display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+}
+.fin-account-item {
+    display: flex; align-items: center; gap: 12px; padding: 10px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+.fin-account-item:last-of-type { border-bottom: none; }
+.fin-account-icon {
+    width: 36px; height: 36px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center; font-size: 0.95rem;
+}
+.fin-account-info { display: flex; flex-direction: column; flex: 1; }
+.fin-account-name { font-weight: 600; font-size: 0.9rem; color: var(--text-primary); }
+.fin-account-type { font-size: 0.75rem; color: var(--text-secondary); }
+.fin-account-balance { font-weight: 700; font-size: 0.95rem; }
+.fin-account-balance.positive { color: var(--success-color); }
+.fin-account-balance.negative { color: var(--danger-color); }
+.fin-account-del {
+    width: 28px; height: 28px; border-radius: 6px; border: none;
+    background: transparent; color: var(--text-secondary); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+}
+.fin-account-del:hover { background: rgba(239,68,68,0.1); color: #EF4444; }
+.fin-accounts-total {
+    display: flex; justify-content: space-between; padding: 10px 0 4px;
+    border-top: 2px solid var(--border-color); margin-top: 4px;
+    font-weight: 700; font-size: 0.95rem;
+}
+.fin-accounts-total .positive { color: var(--success-color); }
+.fin-accounts-total .negative { color: var(--danger-color); }
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .habit-stats-card { flex-direction: column; gap: 16px; padding: 16px; }
+    .habit-stats-ring-wrap { width: 80px; height: 80px; }
+    .habit-stats-grid { gap: 12px; }
+    .habit-cal-grid { grid-template-columns: repeat(10, 1fr); }
+    .habit-add-details { flex-direction: column; }
+    .fin-account-add-row { flex-direction: column; }
+}

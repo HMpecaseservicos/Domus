@@ -272,18 +272,19 @@ class TaskManager {
         const task = this.tasks.find(t => t.id === taskId);
         if (!task) return;
 
-        task.subtasks.push({ id: Date.now(), text, done: false });
-        input.value = '';
-
         if (this.auth.getToken() && Number.isInteger(taskId)) {
             try {
-                await this.auth.apiRequest(`/api/tasks/${taskId}`, {
-                    method: 'PUT',
-                    body: JSON.stringify({ ...this._toServerTask(task) })
+                const resp = await this.auth.apiRequest(`/api/tasks/${taskId}/subtasks`, {
+                    method: 'POST',
+                    body: JSON.stringify({ text })
                 });
-            } catch (e) { console.warn(e); }
+                task.subtasks.push({ id: resp.subtask.id, text: resp.subtask.text, done: false, sortOrder: resp.subtask.sort_order || 0 });
+            } catch (e) { console.warn(e); return; }
+        } else {
+            task.subtasks.push({ id: Date.now(), text, done: false });
         }
 
+        input.value = '';
         this.renderTasks();
         this.saveData();
     }
@@ -293,15 +294,14 @@ class TaskManager {
         if (!task) return;
         const sub = task.subtasks.find(s => s.id === subtaskId);
         if (!sub) return;
-        sub.done = !sub.done;
 
-        if (this.auth.getToken() && Number.isInteger(taskId)) {
+        if (this.auth.getToken() && Number.isInteger(subtaskId)) {
             try {
-                await this.auth.apiRequest(`/api/tasks/${taskId}`, {
-                    method: 'PUT',
-                    body: JSON.stringify({ ...this._toServerTask(task) })
-                });
-            } catch (e) { console.warn(e); }
+                const resp = await this.auth.apiRequest(`/api/subtasks/${subtaskId}/toggle`, { method: 'PATCH' });
+                sub.done = !!resp.subtask.completed;
+            } catch (e) { console.warn(e); return; }
+        } else {
+            sub.done = !sub.done;
         }
 
         this.renderTasks();
@@ -311,17 +311,14 @@ class TaskManager {
     async deleteSubtask(taskId, subtaskId) {
         const task = this.tasks.find(t => t.id === taskId);
         if (!task) return;
-        task.subtasks = task.subtasks.filter(s => s.id !== subtaskId);
 
-        if (this.auth.getToken() && Number.isInteger(taskId)) {
+        if (this.auth.getToken() && Number.isInteger(subtaskId)) {
             try {
-                await this.auth.apiRequest(`/api/tasks/${taskId}`, {
-                    method: 'PUT',
-                    body: JSON.stringify({ ...this._toServerTask(task) })
-                });
-            } catch (e) { console.warn(e); }
+                await this.auth.apiRequest(`/api/subtasks/${subtaskId}`, { method: 'DELETE' });
+            } catch (e) { console.warn(e); return; }
         }
 
+        task.subtasks = task.subtasks.filter(s => s.id !== subtaskId);
         this.renderTasks();
         this.saveData();
     }
@@ -813,8 +810,13 @@ class TaskManager {
     _setEl(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
 
     _mapServerTask(t) {
+        // Use subtask_items from table (preferred) or fall back to JSON subtasks column
         let subtasks = [];
-        try { subtasks = typeof t.subtasks === 'string' ? JSON.parse(t.subtasks) : (t.subtasks || []); } catch(e) { subtasks = []; }
+        if (Array.isArray(t.subtask_items) && t.subtask_items.length > 0) {
+            subtasks = t.subtask_items.map(s => ({ id: s.id, text: s.text, done: !!s.completed, sortOrder: s.sort_order || 0 }));
+        } else {
+            try { const raw = typeof t.subtasks === 'string' ? JSON.parse(t.subtasks) : (t.subtasks || []); subtasks = raw.map(s => ({ id: s.id || Date.now(), text: s.text, done: !!s.done || !!s.completed, sortOrder: s.sort_order || 0 })); } catch(e) { subtasks = []; }
+        }
         let tags = [];
         if (typeof t.tags === 'string' && t.tags) tags = t.tags.split(',').map(x => x.trim()).filter(Boolean);
         else if (Array.isArray(t.tags)) tags = t.tags;

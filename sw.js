@@ -3,7 +3,7 @@
  * Offline support and caching
  */
 
-const CACHE_VERSION = 'domus-v7';
+const CACHE_VERSION = 'domus-v8';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -17,6 +17,7 @@ const STATIC_ASSETS = [
   '/modules/gratitude.js',
   '/modules/purpose.js',
   '/modules/patterns.js',
+  '/modules/habits.js',
   '/manifest.json'
 ];
 
