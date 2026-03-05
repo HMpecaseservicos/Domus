@@ -577,6 +577,45 @@ async function init() {
     `);
     await client.query('CREATE INDEX IF NOT EXISTS idx_savings_deposits_goal_id ON savings_deposits(goal_id);');
 
+    // ===== DEBTS (Controle de Dívidas) =====
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS debts (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name VARCHAR(200) NOT NULL,
+        creditor VARCHAR(200) DEFAULT '',
+        total_amount DECIMAL(14,2) NOT NULL,
+        paid_amount DECIMAL(14,2) DEFAULT 0,
+        interest_rate DECIMAL(6,2) DEFAULT 0,
+        total_installments INTEGER DEFAULT 1,
+        paid_installments INTEGER DEFAULT 0,
+        due_day INTEGER DEFAULT 1,
+        start_date DATE DEFAULT CURRENT_DATE,
+        category VARCHAR(60) DEFAULT 'outros',
+        priority INTEGER DEFAULT 2,
+        status VARCHAR(20) DEFAULT 'active',
+        notes TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_debts_user_id ON debts(user_id);');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_debts_status ON debts(status);');
+
+    // ===== DEBT PAYMENTS (Histórico de Pagamentos) =====
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS debt_payments (
+        id SERIAL PRIMARY KEY,
+        debt_id INTEGER NOT NULL REFERENCES debts(id) ON DELETE CASCADE,
+        amount DECIMAL(12,2) NOT NULL,
+        installment_number INTEGER DEFAULT 1,
+        payment_date DATE DEFAULT CURRENT_DATE,
+        payment_method VARCHAR(30) DEFAULT '',
+        notes TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_debt_payments_debt_id ON debt_payments(debt_id);');
+
     await client.query('COMMIT');
     console.log('PostgreSQL database initialized with tables and indexes');
   } catch (err) {

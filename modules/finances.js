@@ -19,6 +19,8 @@ class FinanceManager {
         // New features
         this.recurringTransactions = [];
         this.savingsGoals = [];
+        this.debts = [];
+        this.debtsSummary = null;
         this.chartData = null;
         this.chartInstance = null;
 
@@ -65,6 +67,7 @@ class FinanceManager {
         this.renderBudgets();
         this.loadRecurringTransactions();
         this.loadSavingsGoals();
+        this.loadDebts();
         this.loadChartData();
     }
 
@@ -1024,6 +1027,198 @@ class FinanceManager {
         ['fin-goal-name', 'fin-goal-target', 'fin-goal-deadline'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     }
 
+    // ===== DEBTS (Controle de Dívidas) =====
+    async loadDebts() {
+        if (!this.auth.getToken()) return;
+        try {
+            const [debtsResp, summaryResp] = await Promise.all([
+                this.auth.apiRequest('/api/debts', { method: 'GET' }),
+                this.auth.apiRequest('/api/debts/summary', { method: 'GET' })
+            ]);
+            this.debts = debtsResp.debts || [];
+            this.debtsSummary = summaryResp;
+            this.renderDebts();
+        } catch (err) { console.warn('Erro ao carregar dívidas:', err); }
+    }
+
+    async addDebt() {
+        const name = document.getElementById('fin-debt-name')?.value?.trim();
+        const creditor = document.getElementById('fin-debt-creditor')?.value?.trim() || '';
+        const totalAmount = parseFloat(document.getElementById('fin-debt-amount')?.value) || 0;
+        const interestRate = parseFloat(document.getElementById('fin-debt-interest')?.value) || 0;
+        const totalInstallments = parseInt(document.getElementById('fin-debt-installments')?.value) || 1;
+        const dueDay = parseInt(document.getElementById('fin-debt-due-day')?.value) || 1;
+        const category = document.getElementById('fin-debt-category')?.value || 'outros';
+        const priority = parseInt(document.getElementById('fin-debt-priority')?.value) || 2;
+        const notes = document.getElementById('fin-debt-notes')?.value || '';
+
+        if (!name || totalAmount <= 0) {
+            this.auth.showNotification('Preencha nome e valor da dívida.', 'warning');
+            return;
+        }
+
+        const debt = { name, creditor, total_amount: totalAmount, interest_rate: interestRate, total_installments: totalInstallments, due_day: dueDay, category, priority, notes };
+
+        try {
+            if (this.auth.getToken()) {
+                const resp = await this.auth.apiRequest('/api/debts', { method: 'POST', body: JSON.stringify(debt) });
+                this.debts.push(resp.debt);
+                this.auth.showNotification(resp.message || 'Dívida cadastrada!', 'success');
+            } else {
+                debt.id = Date.now();
+                debt.paid_amount = 0;
+                debt.paid_installments = 0;
+                debt.remaining = totalAmount;
+                debt.status = 'active';
+                this.debts.push(debt);
+            }
+            this._clearDebtForm();
+            this.renderDebts();
+            this.loadDebts();
+        } catch (err) { this.auth.showNotification(err.message || 'Erro ao cadastrar dívida', 'error'); }
+    }
+
+    async payDebt(id) {
+        const amountEl = document.getElementById(`fin-debt-pay-${id}`);
+        const amount = parseFloat(amountEl?.value) || 0;
+        if (amount <= 0) { this.auth.showNotification('Informe o valor do pagamento.', 'warning'); return; }
+
+        try {
+            if (this.auth.getToken()) {
+                const resp = await this.auth.apiRequest(`/api/debts/${id}/payment`, {
+                    method: 'POST',
+                    body: JSON.stringify({ amount })
+                });
+                const idx = this.debts.findIndex(d => d.id === id);
+                if (idx >= 0) this.debts[idx] = resp.debt;
+                this.auth.showNotification(resp.message || 'Pagamento registrado!', 'success');
+            } else {
+                const debt = this.debts.find(d => d.id === id);
+                if (debt) {
+                    debt.paid_amount = (debt.paid_amount || 0) + amount;
+                    debt.paid_installments = Math.min((debt.paid_installments || 0) + 1, debt.total_installments);
+                    debt.remaining = debt.total_amount - debt.paid_amount;
+                    if (debt.paid_amount >= debt.total_amount) debt.status = 'paid';
+                }
+            }
+            amountEl.value = '';
+            this.renderDebts();
+            this.loadDebts();
+        } catch (err) { this.auth.showNotification(err.message || 'Erro ao registrar pagamento', 'error'); }
+    }
+
+    async deleteDebt(id) {
+        if (!confirm('Excluir esta dívida? Esta ação não pode ser desfeita.')) return;
+        try {
+            if (this.auth.getToken()) await this.auth.apiRequest(`/api/debts/${id}`, { method: 'DELETE' });
+            this.debts = this.debts.filter(d => d.id !== id);
+            this.renderDebts();
+            this.loadDebts();
+            this.auth.showNotification('Dívida excluída.', 'info');
+        } catch (err) { this.auth.showNotification(err.message || 'Erro', 'error'); }
+    }
+
+    renderDebts() {
+        const container = document.getElementById('fin-debts-list');
+        const summaryEl = document.getElementById('fin-debts-summary');
+        if (!container) return;
+
+        // Summary
+        if (summaryEl && this.debtsSummary) {
+            const s = this.debtsSummary;
+            const pctPaid = s.totalDebtAmount > 0 ? (s.totalPaid / s.totalDebtAmount * 100) : 0;
+            summaryEl.innerHTML = `
+                <div class="fin-debt-summary-grid">
+                    <div class="fin-debt-kpi">
+                        <span class="kpi-value">${s.activeDebts}</span>
+                        <span class="kpi-label">Ativas</span>
+                    </div>
+                    <div class="fin-debt-kpi">
+                        <span class="kpi-value">${s.paidDebts}</span>
+                        <span class="kpi-label">Quitadas</span>
+                    </div>
+                    <div class="fin-debt-kpi">
+                        <span class="kpi-value negative">${this._formatBRL(s.totalRemaining)}</span>
+                        <span class="kpi-label">Total Restante</span>
+                    </div>
+                    <div class="fin-debt-kpi">
+                        <span class="kpi-value positive">${pctPaid.toFixed(0)}%</span>
+                        <span class="kpi-label">Progresso</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        if (!this.debts.length) {
+            container.innerHTML = '<div class="fin-empty-cats">Nenhuma dívida cadastrada</div>';
+            return;
+        }
+
+        const priorityLabels = { 1: '🔴 Alta', 2: '🟡 Média', 3: '🟢 Baixa' };
+        const categoryIcons = { cartao: 'fa-credit-card', emprestimo: 'fa-hand-holding-usd', financiamento: 'fa-car', outros: 'fa-file-invoice-dollar' };
+
+        container.innerHTML = this.debts.map(d => {
+            const pct = d.total_amount > 0 ? Math.min((d.paid_amount / d.total_amount) * 100, 100) : 0;
+            const remaining = Math.max(d.total_amount - d.paid_amount, 0);
+            const statusClass = d.status === 'paid' ? 'paid' : pct >= 80 ? 'almost' : '';
+            const installmentText = d.total_installments > 1 ? `${d.paid_installments}/${d.total_installments} parcelas` : 'À vista';
+            const icon = categoryIcons[d.category] || 'fa-file-invoice-dollar';
+
+            return `
+                <div class="fin-debt-card ${statusClass}">
+                    <div class="fin-debt-header">
+                        <div class="fin-debt-icon">
+                            <i class="fas ${icon}"></i>
+                        </div>
+                        <div class="fin-debt-info">
+                            <span class="fin-debt-name">${this._escapeHTML(d.name)}</span>
+                            ${d.creditor ? `<span class="fin-debt-creditor"><i class="fas fa-building"></i> ${this._escapeHTML(d.creditor)}</span>` : ''}
+                            <span class="fin-debt-priority">${priorityLabels[d.priority] || '🟡 Média'}</span>
+                        </div>
+                        <button class="fin-debt-del" onclick="window.app.financeManager.deleteDebt(${d.id})" title="Excluir"><i class="fas fa-trash"></i></button>
+                    </div>
+                    <div class="fin-debt-amounts">
+                        <div class="fin-debt-main-amount">
+                            <span class="label">Valor Total</span>
+                            <span class="value">${this._formatBRL(d.total_amount)}</span>
+                        </div>
+                        <div class="fin-debt-paid">
+                            <span class="label">Pago</span>
+                            <span class="value positive">${this._formatBRL(d.paid_amount)}</span>
+                        </div>
+                        <div class="fin-debt-remaining">
+                            <span class="label">Restante</span>
+                            <span class="value negative">${this._formatBRL(remaining)}</span>
+                        </div>
+                    </div>
+                    <div class="fin-debt-bar-track">
+                        <div class="fin-debt-bar-fill" style="width:${pct}%"></div>
+                    </div>
+                    <div class="fin-debt-footer">
+                        <span><i class="fas fa-calendar-alt"></i> Vence dia ${d.due_day}</span>
+                        <span>${installmentText}</span>
+                        ${d.interest_rate > 0 ? `<span><i class="fas fa-percentage"></i> ${d.interest_rate}% juros</span>` : ''}
+                    </div>
+                    ${d.status !== 'paid' ? `
+                    <div class="fin-debt-pay-row">
+                        <input type="number" id="fin-debt-pay-${d.id}" placeholder="Valor R$" step="0.01" min="0" />
+                        <button onclick="window.app.financeManager.payDebt(${d.id})"><i class="fas fa-money-bill-wave"></i> Pagar</button>
+                    </div>` : '<div class="fin-debt-paid-badge"><i class="fas fa-check-circle"></i> QUITADA</div>'}
+                </div>`;
+        }).join('');
+    }
+
+    _clearDebtForm() {
+        ['fin-debt-name', 'fin-debt-creditor', 'fin-debt-amount', 'fin-debt-interest', 'fin-debt-installments', 'fin-debt-due-day', 'fin-debt-notes'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        const catEl = document.getElementById('fin-debt-category');
+        if (catEl) catEl.selectedIndex = 0;
+        const prioEl = document.getElementById('fin-debt-priority');
+        if (prioEl) prioEl.value = '2';
+    }
+
     // ===== CHARTS =====
     async loadChartData() {
         if (!this.auth.getToken()) return;
@@ -1383,6 +1578,42 @@ class FinanceManager {
                     <button class="fin-add-btn" onclick="window.app.financeManager.addSavingsGoal()"><i class="fas fa-plus"></i></button>
                 </div>
                 <div id="fin-savings-goals-list"></div>
+            </div>
+
+            <!-- Debts (Controle de Dívidas) -->
+            <div class="fin-section-card fin-debts-section">
+                <h3 class="fin-section-title"><i class="fas fa-file-invoice-dollar"></i> Controle de Dívidas</h3>
+                <div id="fin-debts-summary"></div>
+                <div class="fin-debt-add-form">
+                    <div class="fin-debt-add-row">
+                        <input type="text" id="fin-debt-name" class="fin-add-input" placeholder="Nome da dívida" />
+                        <input type="text" id="fin-debt-creditor" class="fin-add-input" placeholder="Credor (banco, loja...)" />
+                        <input type="number" id="fin-debt-amount" class="fin-add-input" placeholder="Valor total R$" step="0.01" min="0" />
+                    </div>
+                    <div class="fin-debt-add-row">
+                        <input type="number" id="fin-debt-interest" class="fin-add-input" placeholder="Juros % (mensal)" step="0.01" min="0" />
+                        <input type="number" id="fin-debt-installments" class="fin-add-input" placeholder="Nº parcelas" min="1" value="1" />
+                        <input type="number" id="fin-debt-due-day" class="fin-add-input" placeholder="Dia vencimento" min="1" max="31" />
+                    </div>
+                    <div class="fin-debt-add-row">
+                        <select id="fin-debt-category" class="fin-add-input">
+                            <option value="cartao">💳 Cartão de Crédito</option>
+                            <option value="emprestimo">🏦 Empréstimo</option>
+                            <option value="financiamento">🚗 Financiamento</option>
+                            <option value="outros">📄 Outros</option>
+                        </select>
+                        <select id="fin-debt-priority" class="fin-add-input">
+                            <option value="1">🔴 Alta Prioridade</option>
+                            <option value="2" selected>🟡 Média Prioridade</option>
+                            <option value="3">🟢 Baixa Prioridade</option>
+                        </select>
+                        <button class="fin-add-btn" onclick="window.app.financeManager.addDebt()"><i class="fas fa-plus"></i> Adicionar</button>
+                    </div>
+                    <div class="fin-debt-add-row">
+                        <textarea id="fin-debt-notes" class="fin-add-input fin-debt-notes" placeholder="Observações (opcional)"></textarea>
+                    </div>
+                </div>
+                <div id="fin-debts-list"></div>
             </div>
 
             <!-- Recurring Transactions -->

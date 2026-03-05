@@ -1785,6 +1785,152 @@ app.get('/api/finances/chart-data', authMiddleware, async (req, res) => {
   }
 });
 
+// ===== DEBTS (Controle de Dívidas) =====
+
+// GET all debts
+app.get('/api/debts', authMiddleware, async (req, res) => {
+  try {
+    const debts = await all('SELECT * FROM debts WHERE user_id = ? ORDER BY priority ASC, due_day ASC', [req.user.id]);
+    res.json({ debts: debts.map(d => ({
+      ...d,
+      total_amount: parseFloat(d.total_amount),
+      paid_amount: parseFloat(d.paid_amount),
+      interest_rate: parseFloat(d.interest_rate),
+      remaining: parseFloat(d.total_amount) - parseFloat(d.paid_amount)
+    }))});
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// POST create debt
+app.post('/api/debts', authMiddleware, async (req, res) => {
+  try {
+    const { name, creditor, total_amount, interest_rate, total_installments, due_day, start_date, category, priority, notes } = req.body;
+    if (!name || !total_amount) return res.status(400).json({ message: 'Name and total_amount required' });
+    
+    const result = await run(`
+      INSERT INTO debts (user_id, name, creditor, total_amount, interest_rate, total_installments, due_day, start_date, category, priority, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+    `, [req.user.id, name, creditor || '', total_amount, interest_rate || 0, total_installments || 1, due_day || 1, start_date || new Date().toISOString().split('T')[0], category || 'outros', priority || 2, notes || '']);
+    
+    const newDebt = await get('SELECT * FROM debts WHERE id = ?', [result.lastID]);
+    res.json({ debt: { ...newDebt, total_amount: parseFloat(newDebt.total_amount), paid_amount: parseFloat(newDebt.paid_amount), interest_rate: parseFloat(newDebt.interest_rate) }, message: 'Dívida cadastrada!' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// PUT update debt
+app.put('/api/debts/:id', authMiddleware, async (req, res) => {
+  try {
+    const debt = await get('SELECT * FROM debts WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
+    if (!debt) return res.status(404).json({ message: 'Debt not found' });
+    
+    const { name, creditor, total_amount, interest_rate, total_installments, due_day, category, priority, status, notes } = req.body;
+    await run(`
+      UPDATE debts SET name = ?, creditor = ?, total_amount = ?, interest_rate = ?, total_installments = ?, due_day = ?, category = ?, priority = ?, status = ?, notes = ?
+      WHERE id = ?
+    `, [name || debt.name, creditor ?? debt.creditor, total_amount ?? debt.total_amount, interest_rate ?? debt.interest_rate, total_installments ?? debt.total_installments, due_day ?? debt.due_day, category ?? debt.category, priority ?? debt.priority, status ?? debt.status, notes ?? debt.notes, req.params.id]);
+    
+    const updated = await get('SELECT * FROM debts WHERE id = ?', [req.params.id]);
+    res.json({ debt: { ...updated, total_amount: parseFloat(updated.total_amount), paid_amount: parseFloat(updated.paid_amount) }, message: 'Dívida atualizada!' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// DELETE debt
+app.delete('/api/debts/:id', authMiddleware, async (req, res) => {
+  try {
+    const debt = await get('SELECT * FROM debts WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
+    if (!debt) return res.status(404).json({ message: 'Debt not found' });
+    
+    await run('DELETE FROM debts WHERE id = ?', [req.params.id]);
+    res.json({ message: 'Dívida removida' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// POST payment to debt
+app.post('/api/debts/:id/payment', authMiddleware, async (req, res) => {
+  try {
+    const debt = await get('SELECT * FROM debts WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
+    if (!debt) return res.status(404).json({ message: 'Debt not found' });
+    
+    const { amount, payment_method, notes } = req.body;
+    if (!amount || amount <= 0) return res.status(400).json({ message: 'Amount required' });
+    
+    const nextInstallment = debt.paid_installments + 1;
+    await run(`
+      INSERT INTO debt_payments (debt_id, amount, installment_number, payment_method, notes)
+      VALUES (?, ?, ?, ?, ?)
+    `, [req.params.id, amount, nextInstallment, payment_method || '', notes || '']);
+    
+    const newPaidAmount = parseFloat(debt.paid_amount) + parseFloat(amount);
+    const newPaidInstallments = Math.min(debt.paid_installments + 1, debt.total_installments);
+    const newStatus = newPaidAmount >= parseFloat(debt.total_amount) ? 'paid' : debt.status;
+    
+    await run('UPDATE debts SET paid_amount = ?, paid_installments = ?, status = ? WHERE id = ?', [newPaidAmount, newPaidInstallments, newStatus, req.params.id]);
+    
+    const updated = await get('SELECT * FROM debts WHERE id = ?', [req.params.id]);
+    res.json({ 
+      debt: { ...updated, total_amount: parseFloat(updated.total_amount), paid_amount: parseFloat(updated.paid_amount), remaining: parseFloat(updated.total_amount) - parseFloat(updated.paid_amount) },
+      message: `Pagamento de R$ ${parseFloat(amount).toFixed(2)} registrado!`
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// GET payments for a debt
+app.get('/api/debts/:id/payments', authMiddleware, async (req, res) => {
+  try {
+    const debt = await get('SELECT * FROM debts WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
+    if (!debt) return res.status(404).json({ message: 'Debt not found' });
+    
+    const payments = await all('SELECT * FROM debt_payments WHERE debt_id = ? ORDER BY payment_date DESC', [req.params.id]);
+    res.json({ payments: payments.map(p => ({ ...p, amount: parseFloat(p.amount) })) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// GET debts summary
+app.get('/api/debts/summary', authMiddleware, async (req, res) => {
+  try {
+    const summary = await get(`
+      SELECT 
+        COUNT(*) as total_debts,
+        COUNT(CASE WHEN status = 'active' THEN 1 END) as active_debts,
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_debts,
+        COALESCE(SUM(total_amount), 0) as total_debt_amount,
+        COALESCE(SUM(paid_amount), 0) as total_paid,
+        COALESCE(SUM(total_amount - paid_amount), 0) as total_remaining
+      FROM debts WHERE user_id = ?
+    `, [req.user.id]);
+    
+    res.json({
+      totalDebts: parseInt(summary.total_debts),
+      activeDebts: parseInt(summary.active_debts),
+      paidDebts: parseInt(summary.paid_debts),
+      totalDebtAmount: parseFloat(summary.total_debt_amount),
+      totalPaid: parseFloat(summary.total_paid),
+      totalRemaining: parseFloat(summary.total_remaining)
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
 // SPA fallback - serve index.html for non-API routes
 app.get('*', (req, res, next) => {
   // Skip API and auth routes
