@@ -523,6 +523,60 @@ async function init() {
     `);
     await client.query('CREATE INDEX IF NOT EXISTS idx_user_badges_user_id ON user_badges(user_id);');
 
+    // ===== RECURRING TRANSACTIONS =====
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS recurring_transactions (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        type VARCHAR(20) NOT NULL,
+        amount DECIMAL(12,2) NOT NULL,
+        category VARCHAR(100),
+        description TEXT,
+        payment_method VARCHAR(30) DEFAULT '',
+        account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+        frequency VARCHAR(20) NOT NULL DEFAULT 'monthly',
+        day_of_month INTEGER DEFAULT 1,
+        start_date DATE NOT NULL,
+        end_date DATE,
+        last_generated DATE,
+        active BOOLEAN DEFAULT true,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_recurring_tx_user_id ON recurring_transactions(user_id);');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_recurring_tx_active ON recurring_transactions(active);');
+
+    // ===== SAVINGS GOALS =====
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS savings_goals (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name VARCHAR(200) NOT NULL,
+        target_amount DECIMAL(14,2) NOT NULL,
+        current_amount DECIMAL(14,2) DEFAULT 0,
+        icon VARCHAR(30) DEFAULT 'fa-piggy-bank',
+        color VARCHAR(10) DEFAULT '#10B981',
+        deadline DATE,
+        priority INTEGER DEFAULT 1,
+        status VARCHAR(20) DEFAULT 'active',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_savings_goals_user_id ON savings_goals(user_id);');
+
+    // ===== SAVINGS DEPOSITS (contribuições para metas) =====
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS savings_deposits (
+        id SERIAL PRIMARY KEY,
+        goal_id INTEGER NOT NULL REFERENCES savings_goals(id) ON DELETE CASCADE,
+        amount DECIMAL(12,2) NOT NULL,
+        date DATE DEFAULT CURRENT_DATE,
+        notes TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_savings_deposits_goal_id ON savings_deposits(goal_id);');
+
     await client.query('COMMIT');
     console.log('PostgreSQL database initialized with tables and indexes');
   } catch (err) {

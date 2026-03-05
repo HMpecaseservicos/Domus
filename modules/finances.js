@@ -16,6 +16,12 @@ class FinanceManager {
         this.viewMonth = now.getMonth();
         this.viewYear = now.getFullYear();
 
+        // New features
+        this.recurringTransactions = [];
+        this.savingsGoals = [];
+        this.chartData = null;
+        this.chartInstance = null;
+
         this.categories = [
             { id: 'alimentacao', name: 'Alimentação', icon: 'fa-utensils', color: '#F59E0B' },
             { id: 'transporte', name: 'Transporte', icon: 'fa-car', color: '#3B82F6' },
@@ -57,6 +63,9 @@ class FinanceManager {
         this.renderAll();
         this.renderAccounts();
         this.renderBudgets();
+        this.loadRecurringTransactions();
+        this.loadSavingsGoals();
+        this.loadChartData();
     }
 
     setupEventListeners() {
@@ -781,7 +790,10 @@ class FinanceManager {
             const [finResp] = await Promise.all([
                 this.auth.apiRequest(`/api/finances?month=${m}&year=${y}`, { method: 'GET' }),
                 this.loadAccounts(),
-                this.loadBudgets()
+                this.loadBudgets(),
+                this.loadRecurringTransactions(),
+                this.loadSavingsGoals(),
+                this.loadChartData()
             ]);
             if (finResp && Array.isArray(finResp.finances)) {
                 const otherTx = this.transactions.filter(t => {
@@ -798,6 +810,327 @@ class FinanceManager {
         }
     }
 
+    // ===== RECURRING TRANSACTIONS =====
+    async loadRecurringTransactions() {
+        if (!this.auth.getToken()) return;
+        try {
+            const resp = await this.auth.apiRequest('/api/recurring-transactions', { method: 'GET' });
+            if (resp && Array.isArray(resp.recurring)) {
+                this.recurringTransactions = resp.recurring.map(r => ({ ...r, amount: parseFloat(r.amount) }));
+                this.renderRecurring();
+            }
+        } catch (err) { console.warn('Erro ao carregar recorrentes:', err); }
+    }
+
+    async addRecurring() {
+        const type = document.getElementById('fin-rec-type')?.value || 'expense';
+        const amount = parseFloat(document.getElementById('fin-rec-amount')?.value);
+        const category = document.getElementById('fin-rec-category')?.value || '';
+        const description = document.getElementById('fin-rec-desc')?.value?.trim() || '';
+        const frequency = document.getElementById('fin-rec-frequency')?.value || 'monthly';
+        const dayOfMonth = parseInt(document.getElementById('fin-rec-day')?.value) || 1;
+        const startDate = document.getElementById('fin-rec-start')?.value;
+
+        if (!amount || amount <= 0) { this.auth.showNotification('Informe um valor.', 'warning'); return; }
+        if (!startDate) { this.auth.showNotification('Informe a data de início.', 'warning'); return; }
+
+        try {
+            if (this.auth.getToken()) {
+                const resp = await this.auth.apiRequest('/api/recurring-transactions', {
+                    method: 'POST',
+                    body: JSON.stringify({ type, amount, category, description, frequency, day_of_month: dayOfMonth, start_date: startDate })
+                });
+                this.recurringTransactions.unshift({ ...resp.recurring, amount: parseFloat(resp.recurring.amount) });
+            } else {
+                this.recurringTransactions.unshift({ id: Date.now(), type, amount, category, description, frequency, day_of_month: dayOfMonth, start_date: startDate, active: true });
+            }
+            this._clearRecurringForm();
+            this.renderRecurring();
+            this.saveData();
+            this.auth.showNotification('Transação recorrente criada!', 'success');
+        } catch (err) { this.auth.showNotification(err.message || 'Erro', 'error'); }
+    }
+
+    async deleteRecurring(id) {
+        if (!confirm('Excluir transação recorrente?')) return;
+        try {
+            if (this.auth.getToken()) await this.auth.apiRequest(`/api/recurring-transactions/${id}`, { method: 'DELETE' });
+            this.recurringTransactions = this.recurringTransactions.filter(r => r.id !== id);
+            this.renderRecurring();
+            this.saveData();
+            this.auth.showNotification('Recorrente excluída.', 'info');
+        } catch (err) { this.auth.showNotification(err.message || 'Erro', 'error'); }
+    }
+
+    async generateRecurring() {
+        try {
+            const resp = await this.auth.apiRequest('/api/recurring-transactions/generate', { method: 'POST' });
+            if (resp.generated > 0) {
+                this.auth.showNotification(resp.message, 'success');
+                this.loadServerData();
+            } else {
+                this.auth.showNotification('Nenhuma transação pendente.', 'info');
+            }
+        } catch (err) { this.auth.showNotification(err.message || 'Erro', 'error'); }
+    }
+
+    renderRecurring() {
+        const container = document.getElementById('fin-recurring-list');
+        if (!container) return;
+        if (!this.recurringTransactions.length) {
+            container.innerHTML = '<div class="fin-empty-cats">Nenhuma transação recorrente</div>';
+            return;
+        }
+        const freqLabels = { daily: 'Diária', weekly: 'Semanal', monthly: 'Mensal', yearly: 'Anual' };
+        container.innerHTML = this.recurringTransactions.map(r => {
+            const cat = this.categories.find(c => c.id === r.category) || { name: r.category || 'Outros', icon: 'fa-tag', color: '#9CA3AF' };
+            const sign = r.type === 'income' ? '+' : '-';
+            const colorClass = r.type === 'income' ? 'positive' : 'negative';
+            return `
+                <div class="fin-recurring-item ${r.active ? '' : 'inactive'}">
+                    <div class="fin-recurring-icon" style="color:${cat.color}"><i class="fas ${cat.icon}"></i></div>
+                    <div class="fin-recurring-info">
+                        <span class="fin-recurring-name">${this._escapeHTML(r.description || cat.name)}</span>
+                        <span class="fin-recurring-freq">${freqLabels[r.frequency] || r.frequency}${r.day_of_month ? ` (dia ${r.day_of_month})` : ''}</span>
+                    </div>
+                    <div class="fin-recurring-amount ${colorClass}">${sign}${this._formatBRL(r.amount)}</div>
+                    <button class="fin-recurring-del" onclick="window.app.financeManager.deleteRecurring(${r.id})" title="Excluir"><i class="fas fa-times"></i></button>
+                </div>`;
+        }).join('');
+    }
+
+    _clearRecurringForm() {
+        ['fin-rec-amount', 'fin-rec-desc', 'fin-rec-start'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    }
+
+    // ===== SAVINGS GOALS =====
+    async loadSavingsGoals() {
+        if (!this.auth.getToken()) return;
+        try {
+            const resp = await this.auth.apiRequest('/api/savings-goals', { method: 'GET' });
+            if (resp && Array.isArray(resp.goals)) {
+                this.savingsGoals = resp.goals.map(g => ({ ...g, target_amount: parseFloat(g.target_amount), current_amount: parseFloat(g.current_amount) }));
+                this.renderSavingsGoals();
+            }
+        } catch (err) { console.warn('Erro ao carregar metas:', err); }
+    }
+
+    async addSavingsGoal() {
+        const name = document.getElementById('fin-goal-name')?.value?.trim();
+        const targetAmount = parseFloat(document.getElementById('fin-goal-target')?.value);
+        const deadline = document.getElementById('fin-goal-deadline')?.value || null;
+
+        if (!name) { this.auth.showNotification('Informe o nome da meta.', 'warning'); return; }
+        if (!targetAmount || targetAmount <= 0) { this.auth.showNotification('Informe um valor.', 'warning'); return; }
+
+        try {
+            if (this.auth.getToken()) {
+                const resp = await this.auth.apiRequest('/api/savings-goals', {
+                    method: 'POST',
+                    body: JSON.stringify({ name, target_amount: targetAmount, deadline })
+                });
+                this.savingsGoals.unshift({ ...resp.goal, target_amount: parseFloat(resp.goal.target_amount), current_amount: 0 });
+            } else {
+                this.savingsGoals.unshift({ id: Date.now(), name, target_amount: targetAmount, current_amount: 0, deadline, status: 'active' });
+            }
+            this._clearGoalForm();
+            this.renderSavingsGoals();
+            this.saveData();
+            this.auth.showNotification('Meta criada!', 'success');
+        } catch (err) { this.auth.showNotification(err.message || 'Erro', 'error'); }
+    }
+
+    async addDeposit(goalId) {
+        const input = document.getElementById(`fin-deposit-${goalId}`);
+        const amount = parseFloat(input?.value);
+        if (!amount || amount <= 0) { this.auth.showNotification('Informe um valor.', 'warning'); return; }
+
+        try {
+            if (this.auth.getToken()) {
+                const resp = await this.auth.apiRequest(`/api/savings-goals/${goalId}/deposit`, {
+                    method: 'POST',
+                    body: JSON.stringify({ amount })
+                });
+                const idx = this.savingsGoals.findIndex(g => g.id === goalId);
+                if (idx !== -1) {
+                    this.savingsGoals[idx] = { ...resp.goal, target_amount: parseFloat(resp.goal.target_amount), current_amount: parseFloat(resp.goal.current_amount) };
+                }
+            } else {
+                const goal = this.savingsGoals.find(g => g.id === goalId);
+                if (goal) goal.current_amount += amount;
+            }
+            if (input) input.value = '';
+            this.renderSavingsGoals();
+            this.saveData();
+            this.auth.showNotification('Depósito registrado!', 'success');
+        } catch (err) { this.auth.showNotification(err.message || 'Erro', 'error'); }
+    }
+
+    async deleteSavingsGoal(id) {
+        if (!confirm('Excluir esta meta?')) return;
+        try {
+            if (this.auth.getToken()) await this.auth.apiRequest(`/api/savings-goals/${id}`, { method: 'DELETE' });
+            this.savingsGoals = this.savingsGoals.filter(g => g.id !== id);
+            this.renderSavingsGoals();
+            this.saveData();
+            this.auth.showNotification('Meta excluída.', 'info');
+        } catch (err) { this.auth.showNotification(err.message || 'Erro', 'error'); }
+    }
+
+    renderSavingsGoals() {
+        const container = document.getElementById('fin-savings-goals-list');
+        if (!container) return;
+        if (!this.savingsGoals.length) {
+            container.innerHTML = '<div class="fin-empty-cats">Nenhuma meta de economia</div>';
+            return;
+        }
+        container.innerHTML = this.savingsGoals.map(g => {
+            const pct = g.target_amount > 0 ? Math.min((g.current_amount / g.target_amount) * 100, 100) : 0;
+            const remaining = Math.max(g.target_amount - g.current_amount, 0);
+            const statusClass = g.status === 'completed' ? 'completed' : pct >= 80 ? 'almost' : '';
+            const deadlineLabel = g.deadline ? new Date(g.deadline + 'T12:00:00').toLocaleDateString('pt-BR') : '';
+            return `
+                <div class="fin-goal-card ${statusClass}">
+                    <div class="fin-goal-header">
+                        <div class="fin-goal-icon" style="background:${g.color || '#10B981'}20;color:${g.color || '#10B981'}">
+                            <i class="fas ${g.icon || 'fa-piggy-bank'}"></i>
+                        </div>
+                        <div class="fin-goal-info">
+                            <span class="fin-goal-name">${this._escapeHTML(g.name)}</span>
+                            ${deadlineLabel ? `<span class="fin-goal-deadline"><i class="fas fa-calendar"></i> ${deadlineLabel}</span>` : ''}
+                        </div>
+                        <button class="fin-goal-del" onclick="window.app.financeManager.deleteSavingsGoal(${g.id})"><i class="fas fa-times"></i></button>
+                    </div>
+                    <div class="fin-goal-amounts">
+                        <span>${this._formatBRL(g.current_amount)}</span>
+                        <span>de ${this._formatBRL(g.target_amount)}</span>
+                    </div>
+                    <div class="fin-goal-bar-track">
+                        <div class="fin-goal-bar-fill" style="width:${pct}%"></div>
+                    </div>
+                    <div class="fin-goal-footer">
+                        <span>${pct.toFixed(0)}% — Falta ${this._formatBRL(remaining)}</span>
+                    </div>
+                    ${g.status !== 'completed' ? `
+                    <div class="fin-goal-deposit-row">
+                        <input type="number" id="fin-deposit-${g.id}" placeholder="Valor R$" step="0.01" min="0" />
+                        <button onclick="window.app.financeManager.addDeposit(${g.id})"><i class="fas fa-plus"></i> Depositar</button>
+                    </div>` : '<div class="fin-goal-completed"><i class="fas fa-check-circle"></i> Meta alcançada!</div>'}
+                </div>`;
+        }).join('');
+    }
+
+    _clearGoalForm() {
+        ['fin-goal-name', 'fin-goal-target', 'fin-goal-deadline'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    }
+
+    // ===== CHARTS =====
+    async loadChartData() {
+        if (!this.auth.getToken()) return;
+        try {
+            const resp = await this.auth.apiRequest('/api/finances/chart-data?months=6', { method: 'GET' });
+            this.chartData = resp;
+            this.renderCharts();
+        } catch (err) { console.warn('Erro ao carregar gráficos:', err); }
+    }
+
+    renderCharts() {
+        if (!this.chartData || !window.Chart) return;
+        const ctx = document.getElementById('fin-chart-monthly');
+        if (!ctx) return;
+
+        if (this.chartInstance) this.chartInstance.destroy();
+
+        const data = this.chartData.monthly || [];
+        const labels = data.map(d => {
+            const dt = new Date(d.month);
+            return dt.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
+        });
+
+        this.chartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    { label: 'Receitas', data: data.map(d => d.income), backgroundColor: 'rgba(16, 185, 129, 0.7)', borderRadius: 4 },
+                    { label: 'Despesas', data: data.map(d => d.expenses), backgroundColor: 'rgba(239, 68, 68, 0.7)', borderRadius: 4 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'top' } },
+                scales: { y: { beginAtZero: true, ticks: { callback: v => 'R$' + v.toLocaleString('pt-BR') } } }
+            }
+        });
+    }
+
+    // ===== EXPORT =====
+    exportCSV() {
+        const monthTx = this._getMonthTransactions();
+        if (!monthTx.length) { this.auth.showNotification('Nenhuma transação para exportar.', 'warning'); return; }
+
+        const headers = ['Data', 'Tipo', 'Categoria', 'Descrição', 'Valor', 'Método'];
+        const rows = monthTx.map(t => {
+            const date = new Date(t.date).toLocaleDateString('pt-BR');
+            const cat = this.categories.find(c => c.id === t.category)?.name || t.category;
+            return [date, t.type === 'income' ? 'Receita' : 'Despesa', cat, `"${(t.description || '').replace(/"/g, '""')}"`, t.amount.toFixed(2).replace('.', ','), t.payment_method || ''];
+        });
+
+        const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `financas_${this.viewMonth + 1}_${this.viewYear}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        this.auth.showNotification('CSV exportado!', 'success');
+    }
+
+    exportPDF() {
+        const monthTx = this._getMonthTransactions();
+        if (!monthTx.length) { this.auth.showNotification('Nenhuma transação para exportar.', 'warning'); return; }
+
+        const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+        const monthName = months[this.viewMonth];
+        const income = monthTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+        const expense = monthTx.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+
+        let html = `<html><head><title>Relatório Financeiro</title><style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            h1 { color: #111827; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #E5E7EB; padding: 8px; text-align: left; }
+            th { background: #F3F4F6; }
+            .income { color: #10B981; }
+            .expense { color: #EF4444; }
+            .summary { margin-top: 20px; padding: 15px; background: #F9FAFB; border-radius: 8px; }
+        </style></head><body>
+            <h1>Relatório Financeiro — ${monthName} ${this.viewYear}</h1>
+            <div class="summary">
+                <p><strong>Receitas:</strong> <span class="income">${this._formatBRL(income)}</span></p>
+                <p><strong>Despesas:</strong> <span class="expense">${this._formatBRL(expense)}</span></p>
+                <p><strong>Saldo:</strong> ${this._formatBRL(income - expense)}</p>
+            </div>
+            <table>
+                <thead><tr><th>Data</th><th>Tipo</th><th>Categoria</th><th>Descrição</th><th>Valor</th></tr></thead>
+                <tbody>
+                    ${monthTx.map(t => {
+                        const cat = this.categories.find(c => c.id === t.category)?.name || t.category;
+                        const cls = t.type === 'income' ? 'income' : 'expense';
+                        return `<tr><td>${new Date(t.date).toLocaleDateString('pt-BR')}</td><td>${t.type === 'income' ? 'Receita' : 'Despesa'}</td><td>${cat}</td><td>${this._escapeHTML(t.description || '-')}</td><td class="${cls}">${this._formatBRL(t.amount)}</td></tr>`;
+                    }).join('')}
+                </tbody>
+            </table>
+        </body></html>`;
+
+        const win = window.open('', '_blank');
+        win.document.write(html);
+        win.document.close();
+        win.print();
+    }
+
     // ===== LOCAL STORAGE =====
     saveData() {
         try {
@@ -805,7 +1138,9 @@ class FinanceManager {
                 transactions: this.transactions,
                 budgetGoal: this.budgetGoal,
                 accounts: this.accounts,
-                budgets: this.budgets
+                budgets: this.budgets,
+                recurringTransactions: this.recurringTransactions,
+                savingsGoals: this.savingsGoals
             }));
         } catch (e) {
             console.warn('Falha ao salvar finanças:', e);
@@ -825,6 +1160,8 @@ class FinanceManager {
                     this.budgetGoal = parsed.budgetGoal || 0;
                     this.accounts = parsed.accounts || [];
                     this.budgets = parsed.budgets || [];
+                    this.recurringTransactions = parsed.recurringTransactions || [];
+                    this.savingsGoals = parsed.savingsGoals || [];
                     this._recalcTotals();
                 }
             }
@@ -1034,6 +1371,69 @@ class FinanceManager {
                     <button class="fin-add-btn" onclick="window.app.financeManager.addAccount()"><i class="fas fa-plus"></i></button>
                 </div>
                 <div id="fin-accounts-list"></div>
+            </div>
+
+            <!-- Savings Goals -->
+            <div class="fin-section-card">
+                <h3 class="fin-section-title"><i class="fas fa-piggy-bank"></i> Metas de Economia</h3>
+                <div class="fin-goal-add-row">
+                    <input type="text" id="fin-goal-name" class="fin-add-input" placeholder="Nome da meta" />
+                    <input type="number" id="fin-goal-target" class="fin-add-input" placeholder="Valor alvo R$" step="0.01" min="0" />
+                    <input type="date" id="fin-goal-deadline" class="fin-add-input" />
+                    <button class="fin-add-btn" onclick="window.app.financeManager.addSavingsGoal()"><i class="fas fa-plus"></i></button>
+                </div>
+                <div id="fin-savings-goals-list"></div>
+            </div>
+
+            <!-- Recurring Transactions -->
+            <div class="fin-section-card">
+                <h3 class="fin-section-title"><i class="fas fa-sync-alt"></i> Transações Recorrentes</h3>
+                <div class="fin-recurring-add-row">
+                    <select id="fin-rec-type" class="fin-add-input">
+                        <option value="expense">Despesa</option>
+                        <option value="income">Receita</option>
+                    </select>
+                    <input type="number" id="fin-rec-amount" class="fin-add-input" placeholder="Valor R$" step="0.01" min="0" />
+                    <select id="fin-rec-category" class="fin-add-input">
+                        <option value="">Categoria</option>
+                        <option value="alimentacao">Alimentação</option>
+                        <option value="transporte">Transporte</option>
+                        <option value="moradia">Moradia</option>
+                        <option value="saude">Saúde</option>
+                        <option value="lazer">Lazer</option>
+                        <option value="assinaturas">Assinaturas</option>
+                        <option value="salario">Salário</option>
+                        <option value="outros">Outros</option>
+                    </select>
+                    <input type="text" id="fin-rec-desc" class="fin-add-input" placeholder="Descrição" />
+                </div>
+                <div class="fin-recurring-add-row">
+                    <select id="fin-rec-frequency" class="fin-add-input">
+                        <option value="monthly">Mensal</option>
+                        <option value="weekly">Semanal</option>
+                        <option value="daily">Diária</option>
+                        <option value="yearly">Anual</option>
+                    </select>
+                    <input type="number" id="fin-rec-day" class="fin-add-input" placeholder="Dia do mês" min="1" max="31" />
+                    <input type="date" id="fin-rec-start" class="fin-add-input" />
+                    <button class="fin-add-btn" onclick="window.app.financeManager.addRecurring()"><i class="fas fa-plus"></i></button>
+                </div>
+                <button class="fin-generate-btn" onclick="window.app.financeManager.generateRecurring()"><i class="fas fa-magic"></i> Gerar Pendentes</button>
+                <div id="fin-recurring-list"></div>
+            </div>
+
+            <!-- Charts -->
+            <div class="fin-section-card">
+                <h3 class="fin-section-title"><i class="fas fa-chart-bar"></i> Evolução Mensal</h3>
+                <div class="fin-chart-container">
+                    <canvas id="fin-chart-monthly" height="250"></canvas>
+                </div>
+            </div>
+
+            <!-- Export Actions -->
+            <div class="fin-export-row">
+                <button class="fin-export-btn" onclick="window.app.financeManager.exportCSV()"><i class="fas fa-file-csv"></i> Exportar CSV</button>
+                <button class="fin-export-btn" onclick="window.app.financeManager.exportPDF()"><i class="fas fa-file-pdf"></i> Exportar PDF</button>
             </div>
 
             <!-- Transaction List -->

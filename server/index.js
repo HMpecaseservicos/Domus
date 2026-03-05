@@ -1512,6 +1512,279 @@ app.get('/api/tasks/ai-insights', authMiddleware, async (req, res) => {
   }
 });
 
+// ===== RECURRING TRANSACTIONS =====
+
+// GET all recurring transactions
+app.get('/api/recurring-transactions', authMiddleware, async (req, res) => {
+  try {
+    const items = await all('SELECT * FROM recurring_transactions WHERE user_id = ? ORDER BY created_at DESC', [req.user.id]);
+    res.json({ recurring: items });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// POST create recurring transaction
+app.post('/api/recurring-transactions', authMiddleware, async (req, res) => {
+  try {
+    const { type, amount, category, description, payment_method, account_id, frequency, day_of_month, start_date, end_date } = req.body;
+    if (!type || !amount || !frequency || !start_date) {
+      return res.status(400).json({ message: 'type, amount, frequency, start_date required' });
+    }
+    const result = await run(
+      `INSERT INTO recurring_transactions (user_id, type, amount, category, description, payment_method, account_id, frequency, day_of_month, start_date, end_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+      [req.user.id, type, amount, category || '', description || '', payment_method || '', account_id || null, frequency, day_of_month || 1, start_date, end_date || null]
+    );
+    const item = await get('SELECT * FROM recurring_transactions WHERE id = ?', [result.lastID]);
+    res.status(201).json({ recurring: item });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// PUT update recurring transaction
+app.put('/api/recurring-transactions/:id', authMiddleware, async (req, res) => {
+  try {
+    const { type, amount, category, description, payment_method, account_id, frequency, day_of_month, start_date, end_date, active } = req.body;
+    await run(
+      `UPDATE recurring_transactions SET type = COALESCE(?, type), amount = COALESCE(?, amount), category = COALESCE(?, category),
+       description = COALESCE(?, description), payment_method = COALESCE(?, payment_method), account_id = ?, frequency = COALESCE(?, frequency),
+       day_of_month = COALESCE(?, day_of_month), start_date = COALESCE(?, start_date), end_date = ?, active = COALESCE(?, active)
+       WHERE id = ? AND user_id = ?`,
+      [type, amount, category, description, payment_method, account_id, frequency, day_of_month, start_date, end_date, active, req.params.id, req.user.id]
+    );
+    const item = await get('SELECT * FROM recurring_transactions WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
+    res.json({ recurring: item });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// DELETE recurring transaction
+app.delete('/api/recurring-transactions/:id', authMiddleware, async (req, res) => {
+  try {
+    await run('DELETE FROM recurring_transactions WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// POST generate pending recurring transactions
+app.post('/api/recurring-transactions/generate', authMiddleware, async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const recurrings = await all(
+      `SELECT * FROM recurring_transactions WHERE user_id = ? AND active = true 
+       AND start_date <= ? AND (end_date IS NULL OR end_date >= ?)`,
+      [req.user.id, today, today]
+    );
+    
+    let generated = 0;
+    for (const r of recurrings) {
+      const lastGen = r.last_generated ? new Date(r.last_generated) : new Date(r.start_date);
+      lastGen.setDate(lastGen.getDate() - 1);
+      
+      const todayDate = new Date(today);
+      let nextDate = new Date(lastGen);
+      
+      while (nextDate <= todayDate) {
+        if (r.frequency === 'daily') {
+          nextDate.setDate(nextDate.getDate() + 1);
+        } else if (r.frequency === 'weekly') {
+          nextDate.setDate(nextDate.getDate() + 7);
+        } else if (r.frequency === 'monthly') {
+          nextDate.setMonth(nextDate.getMonth() + 1);
+          nextDate.setDate(Math.min(r.day_of_month || 1, new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate()));
+        } else if (r.frequency === 'yearly') {
+          nextDate.setFullYear(nextDate.getFullYear() + 1);
+        }
+        
+        if (nextDate > todayDate) break;
+        if (r.end_date && nextDate > new Date(r.end_date)) break;
+        
+        // Create the transaction
+        await run(
+          `INSERT INTO finances (user_id, type, amount, category, description, payment_method, account_id, date)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [req.user.id, r.type, r.amount, r.category, r.description + ' (recorrente)', r.payment_method, r.account_id, nextDate.toISOString()]
+        );
+        generated++;
+        
+        // Update last_generated
+        await run('UPDATE recurring_transactions SET last_generated = ? WHERE id = ?', [nextDate.toISOString().split('T')[0], r.id]);
+      }
+    }
+    
+    res.json({ generated, message: `${generated} transação(ões) gerada(s)` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// ===== SAVINGS GOALS =====
+
+// GET all savings goals
+app.get('/api/savings-goals', authMiddleware, async (req, res) => {
+  try {
+    const goals = await all('SELECT * FROM savings_goals WHERE user_id = ? ORDER BY priority DESC, created_at DESC', [req.user.id]);
+    res.json({ goals });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// POST create savings goal
+app.post('/api/savings-goals', authMiddleware, async (req, res) => {
+  try {
+    const { name, target_amount, icon, color, deadline, priority } = req.body;
+    if (!name || !target_amount) {
+      return res.status(400).json({ message: 'name and target_amount required' });
+    }
+    const result = await run(
+      `INSERT INTO savings_goals (user_id, name, target_amount, icon, color, deadline, priority)
+       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+      [req.user.id, name, target_amount, icon || 'fa-piggy-bank', color || '#10B981', deadline || null, priority || 1]
+    );
+    const goal = await get('SELECT * FROM savings_goals WHERE id = ?', [result.lastID]);
+    res.status(201).json({ goal });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// PUT update savings goal
+app.put('/api/savings-goals/:id', authMiddleware, async (req, res) => {
+  try {
+    const { name, target_amount, current_amount, icon, color, deadline, priority, status } = req.body;
+    await run(
+      `UPDATE savings_goals SET name = COALESCE(?, name), target_amount = COALESCE(?, target_amount),
+       current_amount = COALESCE(?, current_amount), icon = COALESCE(?, icon), color = COALESCE(?, color),
+       deadline = ?, priority = COALESCE(?, priority), status = COALESCE(?, status)
+       WHERE id = ? AND user_id = ?`,
+      [name, target_amount, current_amount, icon, color, deadline, priority, status, req.params.id, req.user.id]
+    );
+    const goal = await get('SELECT * FROM savings_goals WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
+    res.json({ goal });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// DELETE savings goal
+app.delete('/api/savings-goals/:id', authMiddleware, async (req, res) => {
+  try {
+    await run('DELETE FROM savings_goals WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// POST add deposit to savings goal
+app.post('/api/savings-goals/:id/deposit', authMiddleware, async (req, res) => {
+  try {
+    const { amount, notes } = req.body;
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ message: 'amount required and must be > 0' });
+    }
+    const goal = await get('SELECT * FROM savings_goals WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
+    if (!goal) return res.status(404).json({ message: 'Goal not found' });
+    
+    await run(
+      'INSERT INTO savings_deposits (goal_id, amount, notes) VALUES (?, ?, ?)',
+      [req.params.id, amount, notes || '']
+    );
+    
+    const newAmount = parseFloat(goal.current_amount) + parseFloat(amount);
+    const newStatus = newAmount >= parseFloat(goal.target_amount) ? 'completed' : goal.status;
+    await run('UPDATE savings_goals SET current_amount = ?, status = ? WHERE id = ?', [newAmount, newStatus, req.params.id]);
+    
+    const updated = await get('SELECT * FROM savings_goals WHERE id = ?', [req.params.id]);
+    res.json({ goal: updated, message: 'Depósito registrado!' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// GET deposits for a savings goal
+app.get('/api/savings-goals/:id/deposits', authMiddleware, async (req, res) => {
+  try {
+    const goal = await get('SELECT * FROM savings_goals WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
+    if (!goal) return res.status(404).json({ message: 'Goal not found' });
+    
+    const deposits = await all('SELECT * FROM savings_deposits WHERE goal_id = ? ORDER BY date DESC', [req.params.id]);
+    res.json({ deposits });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// ===== FINANCE CHARTS DATA =====
+app.get('/api/finances/chart-data', authMiddleware, async (req, res) => {
+  try {
+    const { months = 6 } = req.query;
+    
+    // Monthly totals for the last N months
+    const monthlyData = await all(`
+      SELECT 
+        DATE_TRUNC('month', date) as month,
+        SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) as income,
+        SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as expenses
+      FROM finances 
+      WHERE user_id = ? AND date >= NOW() - INTERVAL '${parseInt(months)} months'
+      GROUP BY DATE_TRUNC('month', date)
+      ORDER BY month ASC
+    `, [req.user.id]);
+    
+    // Category breakdown for current month
+    const categoryData = await all(`
+      SELECT category, SUM(amount) as total
+      FROM finances 
+      WHERE user_id = ? AND type = 'expense' 
+        AND DATE_TRUNC('month', date) = DATE_TRUNC('month', NOW())
+      GROUP BY category
+      ORDER BY total DESC
+    `, [req.user.id]);
+    
+    // Daily spending for current month
+    const dailyData = await all(`
+      SELECT DATE(date) as day, SUM(amount) as total
+      FROM finances 
+      WHERE user_id = ? AND type = 'expense'
+        AND DATE_TRUNC('month', date) = DATE_TRUNC('month', NOW())
+      GROUP BY DATE(date)
+      ORDER BY day ASC
+    `, [req.user.id]);
+    
+    res.json({
+      monthly: monthlyData.map(m => ({
+        month: m.month,
+        income: parseFloat(m.income) || 0,
+        expenses: parseFloat(m.expenses) || 0,
+        balance: (parseFloat(m.income) || 0) - (parseFloat(m.expenses) || 0)
+      })),
+      categories: categoryData.map(c => ({ category: c.category, total: parseFloat(c.total) })),
+      daily: dailyData.map(d => ({ day: d.day, total: parseFloat(d.total) }))
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
 // SPA fallback - serve index.html for non-API routes
 app.get('*', (req, res, next) => {
   // Skip API and auth routes
