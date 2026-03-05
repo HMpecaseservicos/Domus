@@ -834,6 +834,114 @@
     .fin-tabs-nav { gap: 4px; padding: 6px; }
     .fin-tab-btn { padding: 10px 12px; font-size: 0.8rem; flex-direction: column; gap: 4px; }
     .fin-tab-btn i { font-size: 1.1rem; }
+    
+    /* Recurring mobile */
+    .fin-recurring-form { padding: 12px; }
+    .fin-section-header { flex-direction: column; gap: 12px; align-items: stretch; }
+    .fin-generate-btn-sm { width: 100%; justify-content: center; }
+}
+
+/* ===== SCOPE BADGES ===== */
+.fin-accounts-scope-group {
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-light);
+}
+.fin-accounts-scope-group:last-of-type {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.fin-scope-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    background: var(--surface-hover);
+    border-radius: 8px;
+}
+
+.fin-scope-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 20px;
+}
+.fin-scope-badge.personal {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.15));
+    color: #6366F1;
+}
+.fin-scope-badge.business {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.15));
+    color: #10B981;
+}
+
+.fin-scope-total {
+    font-weight: 700;
+    font-size: 1rem;
+}
+
+.fin-scope-select {
+    min-width: 120px;
+}
+
+/* ===== RECURRING SECTION PROFESSIONAL ===== */
+.fin-recurring-section {
+    border: 1px solid var(--border-light);
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+.fin-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-light);
+    margin-bottom: 16px;
+}
+
+.fin-section-desc {
+    font-size: 0.85rem;
+    color: var(--text-tertiary);
+    margin: -8px 0 16px 0;
+}
+
+.fin-generate-btn-sm {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: linear-gradient(135deg, #6366F1, #8B5CF6);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+}
+.fin-generate-btn-sm:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.35);
+}
+
+.fin-recurring-form {
+    background: var(--surface-hover);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.fin-recurring-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 /* ===== TASK EVOLUTION STYLES ===== */

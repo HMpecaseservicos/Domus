@@ -641,9 +641,11 @@ class FinanceManager {
         const nameEl = document.getElementById('fin-account-name');
         const typeEl = document.getElementById('fin-account-type');
         const balanceEl = document.getElementById('fin-account-balance');
+        const scopeEl = document.getElementById('fin-account-scope');
         const name = nameEl?.value?.trim();
         if (!name) { this.auth.showNotification('Informe o nome da conta.', 'warning'); return; }
         const type = typeEl?.value || 'checking';
+        const scope = scopeEl?.value || 'personal';
         const balance = parseFloat(balanceEl?.value) || 0;
         const typeObj = this.accountTypes.find(t => t.id === type);
 
@@ -651,12 +653,12 @@ class FinanceManager {
             try {
                 const resp = await this.auth.apiRequest('/api/accounts', {
                     method: 'POST',
-                    body: JSON.stringify({ name, type, balance, icon: typeObj?.icon || 'fa-university', color: typeObj?.color || '#3B82F6' })
+                    body: JSON.stringify({ name, type, scope, balance, icon: typeObj?.icon || 'fa-university', color: typeObj?.color || '#3B82F6' })
                 });
                 this.accounts.push({ ...resp.account, balance: parseFloat(resp.account.balance) });
             } catch (err) { this.auth.showNotification(err.message || 'Erro', 'error'); return; }
         } else {
-            this.accounts.push({ id: Date.now(), name, type, balance, icon: typeObj?.icon || 'fa-university', color: typeObj?.color || '#3B82F6' });
+            this.accounts.push({ id: Date.now(), name, type, scope, balance, icon: typeObj?.icon || 'fa-university', color: typeObj?.color || '#3B82F6' });
         }
         if (nameEl) nameEl.value = '';
         if (balanceEl) balanceEl.value = '';
@@ -684,24 +686,47 @@ class FinanceManager {
             container.innerHTML = '<div class="fin-empty-cats">Nenhuma conta cadastrada</div>';
             return;
         }
+        
+        // Separate by scope
+        const personalAccounts = this.accounts.filter(a => a.scope !== 'business');
+        const businessAccounts = this.accounts.filter(a => a.scope === 'business');
         const total = this.accounts.reduce((s, a) => s + a.balance, 0);
-        container.innerHTML = this.accounts.map(a => {
-            const typeObj = this.accountTypes.find(t => t.id === a.type) || { name: a.type, icon: 'fa-university', color: '#9CA3AF' };
+        const personalTotal = personalAccounts.reduce((s, a) => s + a.balance, 0);
+        const businessTotal = businessAccounts.reduce((s, a) => s + a.balance, 0);
+        
+        const renderAccountList = (accounts, scopeLabel, scopeTotal) => {
+            if (accounts.length === 0) return '';
             return `
-            <div class="fin-account-item">
-                <div class="fin-account-icon" style="background:${a.color || typeObj.color}20;color:${a.color || typeObj.color}">
-                    <i class="fas ${a.icon || typeObj.icon}"></i>
+            <div class="fin-accounts-scope-group">
+                <div class="fin-scope-header">
+                    <span class="fin-scope-badge ${scopeLabel === 'Pessoal' ? 'personal' : 'business'}">
+                        <i class="fas ${scopeLabel === 'Pessoal' ? 'fa-user' : 'fa-building'}"></i> ${scopeLabel}
+                    </span>
+                    <span class="fin-scope-total ${scopeTotal >= 0 ? 'positive' : 'negative'}">${this._formatBRL(scopeTotal)}</span>
                 </div>
-                <div class="fin-account-info">
-                    <span class="fin-account-name">${this._escapeHTML(a.name)}</span>
-                    <span class="fin-account-type">${typeObj.name}</span>
-                </div>
-                <div class="fin-account-balance ${a.balance >= 0 ? 'positive' : 'negative'}">${this._formatBRL(a.balance)}</div>
-                <button class="fin-account-del" onclick="window.app.financeManager.deleteAccount(${a.id})" title="Excluir"><i class="fas fa-times"></i></button>
+                ${accounts.map(a => {
+                    const typeObj = this.accountTypes.find(t => t.id === a.type) || { name: a.type, icon: 'fa-university', color: '#9CA3AF' };
+                    return `
+                    <div class="fin-account-item">
+                        <div class="fin-account-icon" style="background:${a.color || typeObj.color}20;color:${a.color || typeObj.color}">
+                            <i class="fas ${a.icon || typeObj.icon}"></i>
+                        </div>
+                        <div class="fin-account-info">
+                            <span class="fin-account-name">${this._escapeHTML(a.name)}</span>
+                            <span class="fin-account-type">${typeObj.name}</span>
+                        </div>
+                        <div class="fin-account-balance ${a.balance >= 0 ? 'positive' : 'negative'}">${this._formatBRL(a.balance)}</div>
+                        <button class="fin-account-del" onclick="window.app.financeManager.deleteAccount(${a.id})" title="Excluir"><i class="fas fa-times"></i></button>
+                    </div>`;
+                }).join('')}
             </div>`;
-        }).join('') + `
+        };
+        
+        container.innerHTML = 
+            renderAccountList(personalAccounts, 'Pessoal', personalTotal) +
+            renderAccountList(businessAccounts, 'Empresa', businessTotal) + `
         <div class="fin-accounts-total">
-            <span>Total:</span>
+            <span>Total Geral:</span>
             <span class="${total >= 0 ? 'positive' : 'negative'}">${this._formatBRL(total)}</span>
         </div>`;
 
@@ -710,7 +735,8 @@ class FinanceManager {
         if (acSelect) {
             const current = acSelect.value;
             acSelect.innerHTML = '<option value="">Sem conta</option>' +
-                this.accounts.map(a => `<option value="${a.id}" ${String(a.id) === current ? 'selected' : ''}>${this._escapeHTML(a.name)}</option>`).join('');
+                (personalAccounts.length ? `<optgroup label="👤 Pessoal">${personalAccounts.map(a => `<option value="${a.id}" ${String(a.id) === current ? 'selected' : ''}>${this._escapeHTML(a.name)}</option>`).join('')}</optgroup>` : '') +
+                (businessAccounts.length ? `<optgroup label="🏢 Empresa">${businessAccounts.map(a => `<option value="${a.id}" ${String(a.id) === current ? 'selected' : ''}>${this._escapeHTML(a.name)}</option>`).join('')}</optgroup>` : '');
         }
     }
 
@@ -1477,19 +1503,33 @@ class FinanceManager {
                     </div>
                     <select id="fin-category" class="fin-add-input fin-cat-select">
                         <option value="">Categoria</option>
-                        <option value="alimentacao">🍔 Alimentação</option>
-                        <option value="transporte">🚗 Transporte</option>
-                        <option value="moradia">🏠 Moradia</option>
-                        <option value="saude">❤️ Saúde</option>
-                        <option value="lazer">🎮 Lazer</option>
-                        <option value="educacao">📚 Educação</option>
-                        <option value="trabalho">💼 Trabalho</option>
-                        <option value="investimentos">📈 Investimentos</option>
-                        <option value="vestuario">👕 Vestuário</option>
-                        <option value="assinaturas">💳 Assinaturas</option>
-                        <option value="presentes">🎁 Presentes</option>
-                        <option value="salario">💰 Salário</option>
-                        <option value="freelance">💻 Freelance</option>
+                        <optgroup label="Despesas Pessoais">
+                            <option value="alimentacao">🍔 Alimentação</option>
+                            <option value="transporte">🚗 Transporte</option>
+                            <option value="moradia">🏠 Moradia</option>
+                            <option value="saude">❤️ Saúde</option>
+                            <option value="lazer">🎮 Lazer</option>
+                            <option value="educacao">📚 Educação</option>
+                            <option value="vestuario">👕 Vestuário</option>
+                            <option value="assinaturas">💳 Assinaturas</option>
+                            <option value="presentes">🎁 Presentes</option>
+                        </optgroup>
+                        <optgroup label="Receitas">
+                            <option value="salario">💰 Salário</option>
+                            <option value="freelance">💻 Freelance</option>
+                            <option value="rendimentos">📈 Rendimentos</option>
+                            <option value="bonus">🎯 Bônus</option>
+                        </optgroup>
+                        <optgroup label="Empresarial">
+                            <option value="faturamento">💵 Faturamento</option>
+                            <option value="fornecedores">📦 Fornecedores</option>
+                            <option value="funcionarios">👥 Funcionários</option>
+                            <option value="impostos">📋 Impostos/Taxas</option>
+                            <option value="aluguel_comercial">🏪 Aluguel Comercial</option>
+                            <option value="marketing">📣 Marketing</option>
+                            <option value="equipamentos">🖥️ Equipamentos</option>
+                            <option value="servicos">🔧 Serviços</option>
+                        </optgroup>
                         <option value="outros">⚡ Outros</option>
                     </select>
                     <input type="text" id="fin-description" class="fin-add-input" placeholder="Descrição (opcional)" />
@@ -1577,17 +1617,79 @@ class FinanceManager {
                 <h3 class="fin-section-title"><i class="fas fa-wallet"></i> Contas</h3>
                 <div class="fin-account-add-row">
                     <input type="text" id="fin-account-name" class="fin-add-input" placeholder="Nome da conta" />
+                    <select id="fin-account-scope" class="fin-add-input fin-scope-select">
+                        <option value="personal">👤 Pessoal</option>
+                        <option value="business">🏢 Empresa</option>
+                    </select>
                     <select id="fin-account-type" class="fin-add-input">
                         <option value="checking">🏦 Conta Corrente</option>
                         <option value="savings">🐷 Poupança</option>
                         <option value="credit">💳 Cartão de Crédito</option>
                         <option value="wallet">👛 Carteira</option>
                         <option value="investment">📈 Investimento</option>
+                        <option value="business_checking">🏢 Conta PJ</option>
                     </select>
                     <input type="number" id="fin-account-balance" class="fin-add-input" placeholder="Saldo R$" step="0.01" />
                     <button class="fin-add-btn" onclick="window.app.financeManager.addAccount()"><i class="fas fa-plus"></i></button>
                 </div>
                 <div id="fin-accounts-list"></div>
+            </div>
+
+            <!-- Recurring Transactions -->
+            <div class="fin-section-card fin-recurring-section">
+                <div class="fin-section-header">
+                    <h3 class="fin-section-title"><i class="fas fa-sync-alt"></i> Transações Recorrentes</h3>
+                    <button class="fin-generate-btn-sm" onclick="window.app.financeManager.generateRecurring()">
+                        <i class="fas fa-magic"></i> Gerar Pendentes
+                    </button>
+                </div>
+                <div class="fin-recurring-form">
+                    <div class="fin-recurring-add-row">
+                        <select id="fin-rec-type" class="fin-add-input">
+                            <option value="expense">📤 Despesa</option>
+                            <option value="income">📥 Receita</option>
+                        </select>
+                        <input type="number" id="fin-rec-amount" class="fin-add-input" placeholder="Valor R$" step="0.01" min="0" />
+                        <select id="fin-rec-category" class="fin-add-input">
+                            <option value="">Categoria</option>
+                            <optgroup label="Despesas Pessoais">
+                                <option value="alimentacao">🍔 Alimentação</option>
+                                <option value="transporte">🚗 Transporte</option>
+                                <option value="moradia">🏠 Moradia</option>
+                                <option value="saude">❤️ Saúde</option>
+                                <option value="lazer">🎮 Lazer</option>
+                                <option value="assinaturas">💳 Assinaturas</option>
+                            </optgroup>
+                            <optgroup label="Receitas">
+                                <option value="salario">💰 Salário</option>
+                                <option value="freelance">💻 Freelance</option>
+                                <option value="rendimentos">📈 Rendimentos</option>
+                            </optgroup>
+                            <optgroup label="Empresarial">
+                                <option value="faturamento">💵 Faturamento</option>
+                                <option value="fornecedores">📦 Fornecedores</option>
+                                <option value="funcionarios">👥 Funcionários</option>
+                                <option value="impostos">📋 Impostos</option>
+                                <option value="aluguel_comercial">🏪 Aluguel Comercial</option>
+                                <option value="servicos">🔧 Serviços</option>
+                            </optgroup>
+                            <option value="outros">⚡ Outros</option>
+                        </select>
+                    </div>
+                    <div class="fin-recurring-add-row">
+                        <input type="text" id="fin-rec-desc" class="fin-add-input" placeholder="Descrição" />
+                        <select id="fin-rec-frequency" class="fin-add-input">
+                            <option value="monthly">📅 Mensal</option>
+                            <option value="weekly">📆 Semanal</option>
+                            <option value="daily">🔁 Diária</option>
+                            <option value="yearly">📌 Anual</option>
+                        </select>
+                        <input type="number" id="fin-rec-day" class="fin-add-input" placeholder="Dia" min="1" max="31" />
+                        <input type="date" id="fin-rec-start" class="fin-add-input" />
+                        <button class="fin-add-btn" onclick="window.app.financeManager.addRecurring()"><i class="fas fa-plus"></i></button>
+                    </div>
+                </div>
+                <div id="fin-recurring-list" class="fin-recurring-list"></div>
             </div>
 
                 <!-- Transaction List -->
@@ -1599,50 +1701,14 @@ class FinanceManager {
                 <!-- Savings Goals -->
                 <div class="fin-section-card">
                     <h3 class="fin-section-title"><i class="fas fa-piggy-bank"></i> Metas de Economia</h3>
+                    <p class="fin-section-desc">Defina objetivos financeiros e acompanhe seu progresso</p>
                     <div class="fin-goal-add-row">
-                        <input type="text" id="fin-goal-name" class="fin-add-input" placeholder="Nome da meta" />
+                        <input type="text" id="fin-goal-name" class="fin-add-input" placeholder="Nome da meta (ex: Viagem, Reserva)" />
                         <input type="number" id="fin-goal-target" class="fin-add-input" placeholder="Valor alvo R$" step="0.01" min="0" />
                         <input type="date" id="fin-goal-deadline" class="fin-add-input" />
                         <button class="fin-add-btn" onclick="window.app.financeManager.addSavingsGoal()"><i class="fas fa-plus"></i></button>
                     </div>
                     <div id="fin-savings-goals-list"></div>
-                </div>
-
-                <!-- Recurring Transactions -->
-                <div class="fin-section-card">
-                    <h3 class="fin-section-title"><i class="fas fa-sync-alt"></i> Transações Recorrentes</h3>
-                    <div class="fin-recurring-add-row">
-                        <select id="fin-rec-type" class="fin-add-input">
-                            <option value="expense">Despesa</option>
-                            <option value="income">Receita</option>
-                        </select>
-                        <input type="number" id="fin-rec-amount" class="fin-add-input" placeholder="Valor R$" step="0.01" min="0" />
-                        <select id="fin-rec-category" class="fin-add-input">
-                            <option value="">Categoria</option>
-                            <option value="alimentacao">Alimentação</option>
-                            <option value="transporte">Transporte</option>
-                            <option value="moradia">Moradia</option>
-                            <option value="saude">Saúde</option>
-                            <option value="lazer">Lazer</option>
-                            <option value="assinaturas">Assinaturas</option>
-                            <option value="salario">Salário</option>
-                            <option value="outros">Outros</option>
-                        </select>
-                        <input type="text" id="fin-rec-desc" class="fin-add-input" placeholder="Descrição" />
-                    </div>
-                    <div class="fin-recurring-add-row">
-                        <select id="fin-rec-frequency" class="fin-add-input">
-                            <option value="monthly">Mensal</option>
-                            <option value="weekly">Semanal</option>
-                            <option value="daily">Diária</option>
-                            <option value="yearly">Anual</option>
-                        </select>
-                        <input type="number" id="fin-rec-day" class="fin-add-input" placeholder="Dia do mês" min="1" max="31" />
-                        <input type="date" id="fin-rec-start" class="fin-add-input" />
-                        <button class="fin-add-btn" onclick="window.app.financeManager.addRecurring()"><i class="fas fa-plus"></i></button>
-                    </div>
-                    <button class="fin-generate-btn" onclick="window.app.financeManager.generateRecurring()"><i class="fas fa-magic"></i> Gerar Pendentes</button>
-                    <div id="fin-recurring-list"></div>
                 </div>
             </div>
 
