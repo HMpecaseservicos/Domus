@@ -691,11 +691,11 @@ app.put('/api/tasks/:id', authMiddleware, validateId, validateTask, handleValida
     if (!task) return res.status(404).json({ message: 'Not found' });
     const tagsStr = tags !== undefined ? (Array.isArray(tags) ? tags.join(',') : (tags || '')) : (task.tags || '');
     const newStatus = status || task.status || 'todo';
-    const newCompleted = newStatus === 'done';
+    const newCompleted = newStatus === 'done' ? 1 : 0;
     const completedAt = newStatus === 'done' && task.status !== 'done' ? new Date().toISOString() : (newStatus !== 'done' ? null : task.completed_at);
     await run(
       'UPDATE tasks SET text = ?, priority = ?, category = ?, due_date = ?, due_time = ?, reminder_at = ?, notes = ?, sort_order = ?, status = ?, completed = ?, tags = ?, estimated_minutes = ?, recurrence = ?, completed_at = ?, life_area = ?, urgency = ?, impact = ?, energy = ?, planned_date = ?, linked_goal_id = ?, group_id = ? WHERE id = ?',
-      [text, priority || task.priority, category ?? task.category, due_date ?? task.due_date, due_time ?? task.due_time ?? '', reminder_at ?? task.reminder_at ?? null, notes ?? task.notes, sort_order ?? task.sort_order, newStatus, newCompleted, tagsStr, estimated_minutes ?? task.estimated_minutes ?? 0, recurrence ?? task.recurrence ?? '', completedAt, life_area ?? task.life_area ?? '', urgency ?? task.urgency ?? 1, impact ?? task.impact ?? 1, energy ?? task.energy ?? 1, planned_date ?? task.planned_date, linked_goal_id ?? task.linked_goal_id, group_id !== undefined ? group_id : task.group_id, id]
+      [text, priority || task.priority, category ?? task.category, due_date ?? task.due_date, due_time ?? task.due_time ?? '', reminder_at ?? task.reminder_at ?? null, notes ?? task.notes, sort_order ?? task.sort_order ?? 0, newStatus, newCompleted, tagsStr, estimated_minutes ?? task.estimated_minutes ?? 0, recurrence ?? task.recurrence ?? '', completedAt, life_area ?? task.life_area ?? '', urgency ?? task.urgency ?? 1, impact ?? task.impact ?? 1, energy ?? task.energy ?? 1, planned_date ?? task.planned_date, linked_goal_id ?? task.linked_goal_id, group_id !== undefined ? group_id : task.group_id, id]
     );
     // Sync subtasks if provided
     if (subtasks !== undefined && Array.isArray(subtasks)) {
@@ -1142,9 +1142,9 @@ app.get('/api/analytics', authMiddleware, async (req, res) => {
   try {
     // Productivity analytics
     const totalTasks = await get('SELECT COUNT(*) as count FROM tasks WHERE user_id = ?', [req.user.id]);
-    const completedTasks = await get('SELECT COUNT(*) as count FROM tasks WHERE user_id = ? AND completed = true', [req.user.id]);
-    const tasksByArea = await all('SELECT life_area, COUNT(*) as count, SUM(CASE WHEN completed = true THEN 1 ELSE 0 END) as done FROM tasks WHERE user_id = ? AND life_area != \'\' GROUP BY life_area', [req.user.id]);
-    const tasksByDay = await all('SELECT EXTRACT(DOW FROM completed_at) as dow, COUNT(*) as count FROM tasks WHERE user_id = ? AND completed = true AND completed_at IS NOT NULL GROUP BY dow ORDER BY count DESC', [req.user.id]);
+    const completedTasks = await get('SELECT COUNT(*) as count FROM tasks WHERE user_id = ? AND completed = 1', [req.user.id]);
+    const tasksByArea = await all('SELECT life_area, COUNT(*) as count, SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) as done FROM tasks WHERE user_id = ? AND life_area != \'\' GROUP BY life_area', [req.user.id]);
+    const tasksByDay = await all('SELECT EXTRACT(DOW FROM completed_at) as dow, COUNT(*) as count FROM tasks WHERE user_id = ? AND completed = 1 AND completed_at IS NOT NULL GROUP BY dow ORDER BY count DESC', [req.user.id]);
     
     // Financial analytics (current month)
     const now = new Date();
@@ -1447,9 +1447,9 @@ app.get('/api/tasks/ai-insights', authMiddleware, async (req, res) => {
     const stats = await get(`
       SELECT 
         COUNT(*) as total,
-        COUNT(*) FILTER (WHERE status = 'done' OR completed = true) as completed,
+        COUNT(*) FILTER (WHERE status = 'done' OR completed = 1) as completed,
         COUNT(*) FILTER (WHERE status = 'in_progress') as in_progress,
-        COUNT(*) FILTER (WHERE due_date < CURRENT_DATE AND status != 'done' AND completed = false) as overdue,
+        COUNT(*) FILTER (WHERE due_date < CURRENT_DATE AND status != 'done' AND completed = 0) as overdue,
         AVG(estimated_minutes) FILTER (WHERE estimated_minutes > 0) as avg_estimate,
         COUNT(DISTINCT category) FILTER (WHERE category != '') as categories_used
       FROM tasks WHERE user_id = ?`, [req.user.id]);
@@ -1473,7 +1473,7 @@ app.get('/api/tasks/ai-insights', authMiddleware, async (req, res) => {
     // Get most productive category
     const topCategory = await get(`
       SELECT category, COUNT(*) as count
-      FROM tasks WHERE user_id = ? AND category != '' AND (status = 'done' OR completed = true)
+      FROM tasks WHERE user_id = ? AND category != '' AND (status = 'done' OR completed = 1)
       GROUP BY category ORDER BY count DESC LIMIT 1`, [req.user.id]);
     
     // Generate insights
