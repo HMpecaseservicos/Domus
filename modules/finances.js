@@ -133,6 +133,29 @@ class FinanceManager {
         if (amountInput) amountInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.addTransaction();
         });
+
+        // Tab navigation
+        document.querySelectorAll('.fin-tab-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const tab = e.currentTarget.dataset.tab;
+                this._switchTab(tab);
+            });
+        });
+    }
+
+    _switchTab(tab) {
+        // Update active button
+        document.querySelectorAll('.fin-tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelector(`.fin-tab-btn[data-tab="${tab}"]`)?.classList.add('active');
+        
+        // Show/hide panels
+        document.querySelectorAll('.fin-tab-panel').forEach(p => p.classList.remove('active'));
+        document.getElementById(`fin-panel-${tab}`)?.classList.add('active');
+        
+        // Render charts if switching to reports tab
+        if (tab === 'reports' && this.chartData) {
+            setTimeout(() => this.renderCharts(), 100);
+        }
     }
 
     // ===== ADD TRANSACTION =====
@@ -306,7 +329,10 @@ class FinanceManager {
         const avgEl = document.getElementById('fin-kpi-daily-avg');
         const projEl = document.getElementById('fin-kpi-projection');
 
-        if (heroEl) heroEl.textContent = fmt(balance);
+        if (heroEl) {
+            heroEl.textContent = fmt(balance);
+            heroEl.className = 'fin-hero-value ' + (balance >= 0 ? 'positive' : 'negative');
+        }
         if (balEl) balEl.textContent = fmt(balance);
         if (incEl) incEl.textContent = fmt(inc);
         if (expEl) expEl.textContent = fmt(exp);
@@ -321,9 +347,6 @@ class FinanceManager {
         // Update home dashboard balance
         const homeBalance = document.getElementById('balance');
         if (homeBalance) homeBalance.textContent = fmt(this.income - this.expenses);
-
-        // Color balance
-        if (heroEl) heroEl.className = 'fin-hero-value ' + (balance >= 0 ? 'positive' : 'negative');
     }
 
     // ===== BUDGET BAR =====
@@ -559,7 +582,8 @@ class FinanceManager {
     }
 
     _formatBRL(value) {
-        return 'R$ ' + Math.abs(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const sign = value < 0 ? '-' : '';
+        return sign + 'R$ ' + Math.abs(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
     _getDateLabel(d) {
@@ -1428,20 +1452,18 @@ class FinanceManager {
                 </div>
             </div>
 
-            <!-- Budget Bar -->
-            <div class="fin-budget-section" id="fin-budget-section" style="display:none">
-                <div class="fin-budget-header">
-                    <span class="fin-budget-title"><i class="fas fa-bullseye"></i> Orçamento Mensal</span>
-                    <input type="number" class="fin-budget-input" id="fin-budget-input" placeholder="Meta R$" min="0" step="100" />
-                </div>
-                <div class="fin-budget-track">
-                    <div class="fin-budget-fill" id="fin-budget-fill"></div>
-                </div>
-                <div class="fin-budget-label" id="fin-budget-label"></div>
+            <!-- Tab Navigation -->
+            <div class="fin-tabs-nav">
+                <button class="fin-tab-btn active" data-tab="transactions"><i class="fas fa-exchange-alt"></i> Transações</button>
+                <button class="fin-tab-btn" data-tab="goals"><i class="fas fa-piggy-bank"></i> Metas</button>
+                <button class="fin-tab-btn" data-tab="debts"><i class="fas fa-file-invoice-dollar"></i> Dívidas</button>
+                <button class="fin-tab-btn" data-tab="reports"><i class="fas fa-chart-bar"></i> Relatórios</button>
             </div>
 
-            <!-- Add Transaction -->
-            <div class="fin-add-card">
+            <!-- TAB: Transactions -->
+            <div class="fin-tab-panel active" id="fin-panel-transactions">
+                <!-- Add Transaction -->
+                <div class="fin-add-card">
                 <div class="fin-add-top">
                     <div class="fin-type-toggle">
                         <button class="fin-type-btn active" data-type="expense"><i class="fas fa-minus-circle"></i> Despesa</button>
@@ -1568,107 +1590,147 @@ class FinanceManager {
                 <div id="fin-accounts-list"></div>
             </div>
 
-            <!-- Savings Goals -->
-            <div class="fin-section-card">
-                <h3 class="fin-section-title"><i class="fas fa-piggy-bank"></i> Metas de Economia</h3>
-                <div class="fin-goal-add-row">
-                    <input type="text" id="fin-goal-name" class="fin-add-input" placeholder="Nome da meta" />
-                    <input type="number" id="fin-goal-target" class="fin-add-input" placeholder="Valor alvo R$" step="0.01" min="0" />
-                    <input type="date" id="fin-goal-deadline" class="fin-add-input" />
-                    <button class="fin-add-btn" onclick="window.app.financeManager.addSavingsGoal()"><i class="fas fa-plus"></i></button>
-                </div>
-                <div id="fin-savings-goals-list"></div>
+                <!-- Transaction List -->
+                <div class="fin-tx-list" id="fin-tx-list"></div>
             </div>
 
-            <!-- Debts (Controle de Dívidas) -->
-            <div class="fin-section-card fin-debts-section">
-                <h3 class="fin-section-title"><i class="fas fa-file-invoice-dollar"></i> Controle de Dívidas</h3>
-                <div id="fin-debts-summary"></div>
-                <div class="fin-debt-add-form">
-                    <div class="fin-debt-add-row">
-                        <input type="text" id="fin-debt-name" class="fin-add-input" placeholder="Nome da dívida" />
-                        <input type="text" id="fin-debt-creditor" class="fin-add-input" placeholder="Credor (banco, loja...)" />
-                        <input type="number" id="fin-debt-amount" class="fin-add-input" placeholder="Valor total R$" step="0.01" min="0" />
+            <!-- TAB: Goals (Metas) -->
+            <div class="fin-tab-panel" id="fin-panel-goals">
+                <!-- Savings Goals -->
+                <div class="fin-section-card">
+                    <h3 class="fin-section-title"><i class="fas fa-piggy-bank"></i> Metas de Economia</h3>
+                    <div class="fin-goal-add-row">
+                        <input type="text" id="fin-goal-name" class="fin-add-input" placeholder="Nome da meta" />
+                        <input type="number" id="fin-goal-target" class="fin-add-input" placeholder="Valor alvo R$" step="0.01" min="0" />
+                        <input type="date" id="fin-goal-deadline" class="fin-add-input" />
+                        <button class="fin-add-btn" onclick="window.app.financeManager.addSavingsGoal()"><i class="fas fa-plus"></i></button>
                     </div>
-                    <div class="fin-debt-add-row">
-                        <input type="number" id="fin-debt-interest" class="fin-add-input" placeholder="Juros % (mensal)" step="0.01" min="0" />
-                        <input type="number" id="fin-debt-installments" class="fin-add-input" placeholder="Nº parcelas" min="1" value="1" />
-                        <input type="number" id="fin-debt-due-day" class="fin-add-input" placeholder="Dia vencimento" min="1" max="31" />
-                    </div>
-                    <div class="fin-debt-add-row">
-                        <select id="fin-debt-category" class="fin-add-input">
-                            <option value="cartao">💳 Cartão de Crédito</option>
-                            <option value="emprestimo">🏦 Empréstimo</option>
-                            <option value="financiamento">🚗 Financiamento</option>
-                            <option value="outros">📄 Outros</option>
+                    <div id="fin-savings-goals-list"></div>
+                </div>
+
+                <!-- Recurring Transactions -->
+                <div class="fin-section-card">
+                    <h3 class="fin-section-title"><i class="fas fa-sync-alt"></i> Transações Recorrentes</h3>
+                    <div class="fin-recurring-add-row">
+                        <select id="fin-rec-type" class="fin-add-input">
+                            <option value="expense">Despesa</option>
+                            <option value="income">Receita</option>
                         </select>
-                        <select id="fin-debt-priority" class="fin-add-input">
-                            <option value="1">🔴 Alta Prioridade</option>
-                            <option value="2" selected>🟡 Média Prioridade</option>
-                            <option value="3">🟢 Baixa Prioridade</option>
+                        <input type="number" id="fin-rec-amount" class="fin-add-input" placeholder="Valor R$" step="0.01" min="0" />
+                        <select id="fin-rec-category" class="fin-add-input">
+                            <option value="">Categoria</option>
+                            <option value="alimentacao">Alimentação</option>
+                            <option value="transporte">Transporte</option>
+                            <option value="moradia">Moradia</option>
+                            <option value="saude">Saúde</option>
+                            <option value="lazer">Lazer</option>
+                            <option value="assinaturas">Assinaturas</option>
+                            <option value="salario">Salário</option>
+                            <option value="outros">Outros</option>
                         </select>
-                        <button class="fin-add-btn" onclick="window.app.financeManager.addDebt()"><i class="fas fa-plus"></i> Adicionar</button>
+                        <input type="text" id="fin-rec-desc" class="fin-add-input" placeholder="Descrição" />
                     </div>
-                    <div class="fin-debt-add-row">
-                        <textarea id="fin-debt-notes" class="fin-add-input fin-debt-notes" placeholder="Observações (opcional)"></textarea>
+                    <div class="fin-recurring-add-row">
+                        <select id="fin-rec-frequency" class="fin-add-input">
+                            <option value="monthly">Mensal</option>
+                            <option value="weekly">Semanal</option>
+                            <option value="daily">Diária</option>
+                            <option value="yearly">Anual</option>
+                        </select>
+                        <input type="number" id="fin-rec-day" class="fin-add-input" placeholder="Dia do mês" min="1" max="31" />
+                        <input type="date" id="fin-rec-start" class="fin-add-input" />
+                        <button class="fin-add-btn" onclick="window.app.financeManager.addRecurring()"><i class="fas fa-plus"></i></button>
+                    </div>
+                    <button class="fin-generate-btn" onclick="window.app.financeManager.generateRecurring()"><i class="fas fa-magic"></i> Gerar Pendentes</button>
+                    <div id="fin-recurring-list"></div>
+                </div>
+            </div>
+
+            <!-- TAB: Debts (Dívidas) -->
+            <div class="fin-tab-panel" id="fin-panel-debts">
+                <div class="fin-section-card fin-debts-section">
+                    <h3 class="fin-section-title"><i class="fas fa-file-invoice-dollar"></i> Controle de Dívidas</h3>
+                    <div id="fin-debts-summary"></div>
+                    <div class="fin-debt-add-form">
+                        <div class="fin-debt-add-row">
+                            <input type="text" id="fin-debt-name" class="fin-add-input" placeholder="Nome da dívida" />
+                            <input type="text" id="fin-debt-creditor" class="fin-add-input" placeholder="Credor (banco, loja...)" />
+                            <input type="number" id="fin-debt-amount" class="fin-add-input" placeholder="Valor total R$" step="0.01" min="0" />
+                        </div>
+                        <div class="fin-debt-add-row">
+                            <input type="number" id="fin-debt-interest" class="fin-add-input" placeholder="Juros % (mensal)" step="0.01" min="0" />
+                            <input type="number" id="fin-debt-installments" class="fin-add-input" placeholder="Nº parcelas" min="1" value="1" />
+                            <input type="number" id="fin-debt-due-day" class="fin-add-input" placeholder="Dia vencimento" min="1" max="31" />
+                        </div>
+                        <div class="fin-debt-add-row">
+                            <select id="fin-debt-category" class="fin-add-input">
+                                <option value="cartao">💳 Cartão de Crédito</option>
+                                <option value="emprestimo">🏦 Empréstimo</option>
+                                <option value="financiamento">🚗 Financiamento</option>
+                                <option value="outros">📄 Outros</option>
+                            </select>
+                            <select id="fin-debt-priority" class="fin-add-input">
+                                <option value="1">🔴 Alta Prioridade</option>
+                                <option value="2" selected>🟡 Média Prioridade</option>
+                                <option value="3">🟢 Baixa Prioridade</option>
+                            </select>
+                            <button class="fin-add-btn" onclick="window.app.financeManager.addDebt()"><i class="fas fa-plus"></i> Adicionar</button>
+                        </div>
+                        <div class="fin-debt-add-row">
+                            <textarea id="fin-debt-notes" class="fin-add-input fin-debt-notes" placeholder="Observações (opcional)"></textarea>
+                        </div>
+                    </div>
+                    <div id="fin-debts-list"></div>
+                </div>
+            </div>
+
+            <!-- TAB: Reports (Relatórios) -->
+            <div class="fin-tab-panel" id="fin-panel-reports">
+                <!-- Category Breakdown -->
+                <div class="fin-section-card">
+                    <h3 class="fin-section-title"><i class="fas fa-chart-pie"></i> Despesas por Categoria</h3>
+                    <div class="fin-category-bars" id="fin-category-bars"></div>
+                </div>
+
+                <!-- Budgets per Category -->
+                <div class="fin-section-card">
+                    <h3 class="fin-section-title"><i class="fas fa-bullseye"></i> Orçamentos por Categoria</h3>
+                    <div class="fin-budget-add-row">
+                        <select id="fin-budget-cat" class="fin-add-input">
+                            <option value="">Categoria</option>
+                            <option value="alimentacao">Alimentação</option>
+                            <option value="transporte">Transporte</option>
+                            <option value="moradia">Moradia</option>
+                            <option value="saude">Saúde</option>
+                            <option value="lazer">Lazer</option>
+                            <option value="educacao">Educação</option>
+                            <option value="trabalho">Trabalho</option>
+                            <option value="investimentos">Investimentos</option>
+                            <option value="vestuario">Vestuário</option>
+                            <option value="assinaturas">Assinaturas</option>
+                            <option value="presentes">Presentes</option>
+                            <option value="outros">Outros</option>
+                        </select>
+                        <input type="number" id="fin-budget-amount" class="fin-add-input" placeholder="Valor R$" step="0.01" min="0" />
+                        <button class="fin-add-btn" onclick="window.app.financeManager.saveBudget()"><i class="fas fa-plus"></i></button>
+                    </div>
+                    <div id="fin-budgets-list"></div>
+                </div>
+
+                <!-- Charts -->
+                <div class="fin-section-card">
+                    <h3 class="fin-section-title"><i class="fas fa-chart-bar"></i> Evolução Mensal</h3>
+                    <div class="fin-chart-container">
+                        <canvas id="fin-chart-monthly" height="250"></canvas>
                     </div>
                 </div>
-                <div id="fin-debts-list"></div>
-            </div>
 
-            <!-- Recurring Transactions -->
-            <div class="fin-section-card">
-                <h3 class="fin-section-title"><i class="fas fa-sync-alt"></i> Transações Recorrentes</h3>
-                <div class="fin-recurring-add-row">
-                    <select id="fin-rec-type" class="fin-add-input">
-                        <option value="expense">Despesa</option>
-                        <option value="income">Receita</option>
-                    </select>
-                    <input type="number" id="fin-rec-amount" class="fin-add-input" placeholder="Valor R$" step="0.01" min="0" />
-                    <select id="fin-rec-category" class="fin-add-input">
-                        <option value="">Categoria</option>
-                        <option value="alimentacao">Alimentação</option>
-                        <option value="transporte">Transporte</option>
-                        <option value="moradia">Moradia</option>
-                        <option value="saude">Saúde</option>
-                        <option value="lazer">Lazer</option>
-                        <option value="assinaturas">Assinaturas</option>
-                        <option value="salario">Salário</option>
-                        <option value="outros">Outros</option>
-                    </select>
-                    <input type="text" id="fin-rec-desc" class="fin-add-input" placeholder="Descrição" />
-                </div>
-                <div class="fin-recurring-add-row">
-                    <select id="fin-rec-frequency" class="fin-add-input">
-                        <option value="monthly">Mensal</option>
-                        <option value="weekly">Semanal</option>
-                        <option value="daily">Diária</option>
-                        <option value="yearly">Anual</option>
-                    </select>
-                    <input type="number" id="fin-rec-day" class="fin-add-input" placeholder="Dia do mês" min="1" max="31" />
-                    <input type="date" id="fin-rec-start" class="fin-add-input" />
-                    <button class="fin-add-btn" onclick="window.app.financeManager.addRecurring()"><i class="fas fa-plus"></i></button>
-                </div>
-                <button class="fin-generate-btn" onclick="window.app.financeManager.generateRecurring()"><i class="fas fa-magic"></i> Gerar Pendentes</button>
-                <div id="fin-recurring-list"></div>
-            </div>
-
-            <!-- Charts -->
-            <div class="fin-section-card">
-                <h3 class="fin-section-title"><i class="fas fa-chart-bar"></i> Evolução Mensal</h3>
-                <div class="fin-chart-container">
-                    <canvas id="fin-chart-monthly" height="250"></canvas>
+                <!-- Export Actions -->
+                <div class="fin-export-row">
+                    <button class="fin-export-btn" onclick="window.app.financeManager.exportCSV()"><i class="fas fa-file-csv"></i> Exportar CSV</button>
+                    <button class="fin-export-btn" onclick="window.app.financeManager.exportPDF()"><i class="fas fa-file-pdf"></i> Exportar PDF</button>
                 </div>
             </div>
-
-            <!-- Export Actions -->
-            <div class="fin-export-row">
-                <button class="fin-export-btn" onclick="window.app.financeManager.exportCSV()"><i class="fas fa-file-csv"></i> Exportar CSV</button>
-                <button class="fin-export-btn" onclick="window.app.financeManager.exportPDF()"><i class="fas fa-file-pdf"></i> Exportar PDF</button>
-            </div>
-
-            <!-- Transaction List -->
-            <div class="fin-tx-list" id="fin-tx-list"></div>
         </div>
         `;
     }

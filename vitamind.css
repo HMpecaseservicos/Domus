@@ -2422,6 +2422,84 @@ body {
     text-align: center;
 }
 
+/* ---- Tab Navigation ---- */
+.fin-tabs-nav {
+    display: flex;
+    gap: 8px;
+    margin: 20px 0;
+    padding: 8px;
+    background: var(--surface);
+    border-radius: 12px;
+    border: 1px solid var(--border-light);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.fin-tab-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+    flex: 1;
+    justify-content: center;
+}
+
+.fin-tab-btn:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+
+.fin-tab-btn.active {
+    background: linear-gradient(135deg, #6366F1, #8B5CF6);
+    color: white;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+.fin-tab-btn i {
+    font-size: 1rem;
+}
+
+/* Tab Panels */
+.fin-tab-panel {
+    display: none;
+}
+
+.fin-tab-panel.active {
+    display: block;
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Mobile tabs */
+@media (max-width: 600px) {
+    .fin-tabs-nav {
+        gap: 4px;
+        padding: 6px;
+    }
+    .fin-tab-btn {
+        padding: 10px 12px;
+        font-size: 0.8rem;
+        flex-direction: column;
+        gap: 4px;
+    }
+    .fin-tab-btn i {
+        font-size: 1.1rem;
+    }
+}
+
 /* ---- Add Card ---- */
 .fin-add-card {
     background: var(--surface);
