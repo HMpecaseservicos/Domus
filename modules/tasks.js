@@ -196,7 +196,7 @@ class TaskManager {
         const columns = [
             { id: 'todo', label: 'A Fazer', icon: 'fa-circle', tasks: tasks.filter(t => t.status === 'todo') },
             { id: 'in_progress', label: 'Em Andamento', icon: 'fa-spinner', tasks: tasks.filter(t => t.status === 'in_progress') },
-            { id: 'done', label: 'Concluida', icon: 'fa-check-circle', tasks: tasks.filter(t => t.status === 'done') }
+            { id: 'done', label: 'Concluída', icon: 'fa-check-circle', tasks: tasks.filter(t => t.status === 'done') }
         ];
 
         board.innerHTML = columns.map(col => `
@@ -297,7 +297,7 @@ class TaskManager {
         const dueLabel = task.dueDate ? this._formatDue(task.dueDate, task.dueTime) : 'Sem prazo';
         const cat = task.category ? `<span class="pm-badge pm-badge-category">${this._esc(task.category)}</span>` : '';
         const tags = (task.tags || []).map(tag => `<span class="pm-tag">#${this._esc(tag)}</span>`).join('');
-        const statusLabel = { todo: 'A Fazer', in_progress: 'Em Andamento', done: 'Concluida' }[task.status || 'todo'];
+        const statusLabel = { todo: 'A Fazer', in_progress: 'Em Andamento', done: 'Concluída' }[task.status || 'todo'];
         const isExpanded = this.expandedTaskId === task.id;
         const subtasksHtml = (task.subtasks || []).map(s => `
             <label class="pm-subtask-item ${s.done ? 'done' : ''}">
@@ -521,7 +521,7 @@ class TaskManager {
 
     async saveTaskFromModal() {
         const text = (document.getElementById('pm-task-title-input')?.value || '').trim();
-        if (!text) { this.auth.showNotification('Titulo da tarefa e obrigatorio.', 'warning'); return; }
+        if (!text) { this.auth.showNotification('Título da tarefa é obrigatório.', 'warning'); return; }
 
         const payload = {
             text,
@@ -607,7 +607,7 @@ class TaskManager {
     _formatDueShort(date) { if (!date) return ''; const d = new Date(`${date}T12:00:00`); return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }); }
     _formatReminder(iso) { if (!iso) return ''; const d = new Date(iso); return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); }
     _parseTags(raw) { return raw.split(',').map(x => x.trim()).filter(Boolean).slice(0, 12); }
-    _priorityLabel(p) { return { high: 'Alta', medium: 'Media', low: 'Baixa' }[p] || 'Baixa'; }
+    _priorityLabel(p) { return { high: 'Alta', medium: 'Média', low: 'Baixa' }[p] || 'Baixa'; }
     _toLocalDateTime(iso) { if (!iso) return ''; const d = new Date(iso); if (Number.isNaN(d.getTime())) return ''; const pad = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; }
     _fromLocalDateTime(value) { if (!value) return null; const d = new Date(value); if (Number.isNaN(d.getTime())) return null; return d.toISOString(); }
     _esc(str) { return window.DomusUtils ? DomusUtils.escapeHTML(str) : (str || '').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -643,7 +643,7 @@ class TaskManager {
             <div class="pm-topbar">
                 <div>
                     <h3 class="pm-title"><i class="fas fa-list-check"></i> Tarefas</h3>
-                    <p class="pm-subtitle">Gestao profissional com gamificacao e inteligencia artificial</p>
+                    <p class="pm-subtitle">Gestão profissional com gamificação e inteligência artificial</p>
                 </div>
                 <button id="pm-new-task-btn" class="pm-primary-btn"><i class="fas fa-plus"></i> Nova Tarefa</button>
             </div>
@@ -654,7 +654,7 @@ class TaskManager {
                 <div class="pm-kpi-card"><span>Total</span><strong id="pm-stat-total">0</strong></div>
                 <div class="pm-kpi-card"><span>Pendentes</span><strong id="pm-stat-pending">0</strong></div>
                 <div class="pm-kpi-card"><span>Em andamento</span><strong id="pm-stat-progress">0</strong></div>
-                <div class="pm-kpi-card"><span>Concluidas</span><strong id="pm-stat-done">0</strong></div>
+                <div class="pm-kpi-card"><span>Concluídas</span><strong id="pm-stat-done">0</strong></div>
                 <div class="pm-kpi-card"><span>Atrasadas</span><strong id="pm-stat-overdue">0</strong></div>
             </div>
 
@@ -670,7 +670,7 @@ class TaskManager {
                     <button class="pm-filter-chip active" data-filter="all">Todas <span id="pm-count">0</span></button>
                     <button class="pm-filter-chip" data-filter="pending">Pendentes</button>
                     <button class="pm-filter-chip" data-filter="in_progress">Em andamento</button>
-                    <button class="pm-filter-chip" data-filter="done">Concluidas</button>
+                    <button class="pm-filter-chip" data-filter="done">Concluídas</button>
                     <button class="pm-filter-chip" data-filter="today">Hoje</button>
                     <button class="pm-filter-chip" data-filter="overdue">Atrasadas</button>
                 </div>
@@ -686,8 +686,8 @@ class TaskManager {
                         <div class="pm-grid-2">
                             <label class="pm-field pm-field-full"><span>Titulo da tarefa *</span><input id="pm-task-title-input" type="text" maxlength="500" required /></label>
                             <label class="pm-field"><span>Categoria</span><input id="pm-task-category-input" type="text" maxlength="60" placeholder="Ex.: Trabalho" /></label>
-                            <label class="pm-field"><span>Status</span><select id="pm-task-status-input"><option value="todo">A Fazer</option><option value="in_progress">Em Andamento</option><option value="done">Concluida</option></select></label>
-                            <label class="pm-field"><span>Prioridade</span><select id="pm-task-priority-input"><option value="low">Baixa</option><option value="medium">Media</option><option value="high">Alta</option></select></label>
+                            <label class="pm-field"><span>Status</span><select id="pm-task-status-input"><option value="todo">A Fazer</option><option value="in_progress">Em Andamento</option><option value="done">Concluída</option></select></label>
+                            <label class="pm-field"><span>Prioridade</span><select id="pm-task-priority-input"><option value="low">Baixa</option><option value="medium">Média</option><option value="high">Alta</option></select></label>
                             <label class="pm-field"><span>Data de vencimento</span><input id="pm-task-due-date-input" type="date" /></label>
                             <label class="pm-field"><span>Hora</span><input id="pm-task-due-time-input" type="time" /></label>
                             <label class="pm-field"><span>Tempo estimado (min)</span><input id="pm-task-estimate-input" type="number" min="0" max="9999" /></label>
