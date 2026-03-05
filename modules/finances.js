@@ -1481,6 +1481,8 @@ class FinanceManager {
             <!-- Tab Navigation -->
             <div class="fin-tabs-nav">
                 <button class="fin-tab-btn active" data-tab="transactions"><i class="fas fa-exchange-alt"></i> Transações</button>
+                <button class="fin-tab-btn" data-tab="recurring"><i class="fas fa-sync-alt"></i> Recorrentes</button>
+                <button class="fin-tab-btn" data-tab="accounts"><i class="fas fa-wallet"></i> Contas</button>
                 <button class="fin-tab-btn" data-tab="goals"><i class="fas fa-piggy-bank"></i> Metas</button>
                 <button class="fin-tab-btn" data-tab="debts"><i class="fas fa-file-invoice-dollar"></i> Dívidas</button>
                 <button class="fin-tab-btn" data-tab="reports"><i class="fas fa-chart-bar"></i> Relatórios</button>
@@ -1612,88 +1614,94 @@ class FinanceManager {
                 </div>
             </div>
 
-            <!-- Accounts Section -->
-            <div class="fin-section-card">
-                <h3 class="fin-section-title"><i class="fas fa-wallet"></i> Contas</h3>
-                <div class="fin-account-add-row">
-                    <input type="text" id="fin-account-name" class="fin-add-input" placeholder="Nome da conta" />
-                    <select id="fin-account-scope" class="fin-add-input fin-scope-select">
-                        <option value="personal">👤 Pessoal</option>
-                        <option value="business">🏢 Empresa</option>
-                    </select>
-                    <select id="fin-account-type" class="fin-add-input">
-                        <option value="checking">🏦 Conta Corrente</option>
-                        <option value="savings">🐷 Poupança</option>
-                        <option value="credit">💳 Cartão de Crédito</option>
-                        <option value="wallet">👛 Carteira</option>
-                        <option value="investment">📈 Investimento</option>
-                        <option value="business_checking">🏢 Conta PJ</option>
-                    </select>
-                    <input type="number" id="fin-account-balance" class="fin-add-input" placeholder="Saldo R$" step="0.01" />
-                    <button class="fin-add-btn" onclick="window.app.financeManager.addAccount()"><i class="fas fa-plus"></i></button>
-                </div>
-                <div id="fin-accounts-list"></div>
-            </div>
-
-            <!-- Recurring Transactions -->
-            <div class="fin-section-card fin-recurring-section">
-                <div class="fin-section-header">
-                    <h3 class="fin-section-title"><i class="fas fa-sync-alt"></i> Transações Recorrentes</h3>
-                    <button class="fin-generate-btn-sm" onclick="window.app.financeManager.generateRecurring()">
-                        <i class="fas fa-magic"></i> Gerar Pendentes
-                    </button>
-                </div>
-                <div class="fin-recurring-form">
-                    <div class="fin-recurring-add-row">
-                        <select id="fin-rec-type" class="fin-add-input">
-                            <option value="expense">📤 Despesa</option>
-                            <option value="income">📥 Receita</option>
-                        </select>
-                        <input type="number" id="fin-rec-amount" class="fin-add-input" placeholder="Valor R$" step="0.01" min="0" />
-                        <select id="fin-rec-category" class="fin-add-input">
-                            <option value="">Categoria</option>
-                            <optgroup label="Despesas Pessoais">
-                                <option value="alimentacao">🍔 Alimentação</option>
-                                <option value="transporte">🚗 Transporte</option>
-                                <option value="moradia">🏠 Moradia</option>
-                                <option value="saude">❤️ Saúde</option>
-                                <option value="lazer">🎮 Lazer</option>
-                                <option value="assinaturas">💳 Assinaturas</option>
-                            </optgroup>
-                            <optgroup label="Receitas">
-                                <option value="salario">💰 Salário</option>
-                                <option value="freelance">💻 Freelance</option>
-                                <option value="rendimentos">📈 Rendimentos</option>
-                            </optgroup>
-                            <optgroup label="Empresarial">
-                                <option value="faturamento">💵 Faturamento</option>
-                                <option value="fornecedores">📦 Fornecedores</option>
-                                <option value="funcionarios">👥 Funcionários</option>
-                                <option value="impostos">📋 Impostos</option>
-                                <option value="aluguel_comercial">🏪 Aluguel Comercial</option>
-                                <option value="servicos">🔧 Serviços</option>
-                            </optgroup>
-                            <option value="outros">⚡ Outros</option>
-                        </select>
-                    </div>
-                    <div class="fin-recurring-add-row">
-                        <input type="text" id="fin-rec-desc" class="fin-add-input" placeholder="Descrição" />
-                        <select id="fin-rec-frequency" class="fin-add-input">
-                            <option value="monthly">📅 Mensal</option>
-                            <option value="weekly">📆 Semanal</option>
-                            <option value="daily">🔁 Diária</option>
-                            <option value="yearly">📌 Anual</option>
-                        </select>
-                        <input type="number" id="fin-rec-day" class="fin-add-input" placeholder="Dia" min="1" max="31" />
-                        <input type="date" id="fin-rec-start" class="fin-add-input" />
-                        <button class="fin-add-btn" onclick="window.app.financeManager.addRecurring()"><i class="fas fa-plus"></i></button>
-                    </div>
-                </div>
-                <div id="fin-recurring-list" class="fin-recurring-list"></div>
-            </div>
-
                 <!-- Transaction List -->
                 <div class="fin-tx-list" id="fin-tx-list"></div>
+            </div>
+
+            <!-- TAB: Recurring -->
+            <div class="fin-tab-panel" id="fin-panel-recurring">
+                <div class="fin-section-card fin-recurring-section">
+                    <div class="fin-section-header">
+                        <h3 class="fin-section-title"><i class="fas fa-sync-alt"></i> Transações Recorrentes</h3>
+                        <button class="fin-generate-btn-sm" onclick="window.app.financeManager.generateRecurring()">
+                            <i class="fas fa-magic"></i> Gerar Pendentes do Mês
+                        </button>
+                    </div>
+                    <p class="fin-section-desc">Configure despesas e receitas que se repetem automaticamente (aluguel, salário, assinaturas...)</p>
+                    <div class="fin-recurring-form">
+                        <div class="fin-recurring-add-row">
+                            <select id="fin-rec-type" class="fin-add-input">
+                                <option value="expense">📤 Despesa</option>
+                                <option value="income">📥 Receita</option>
+                            </select>
+                            <input type="number" id="fin-rec-amount" class="fin-add-input" placeholder="Valor R$" step="0.01" min="0" />
+                            <select id="fin-rec-category" class="fin-add-input">
+                                <option value="">Categoria</option>
+                                <optgroup label="Despesas Pessoais">
+                                    <option value="alimentacao">🍔 Alimentação</option>
+                                    <option value="transporte">🚗 Transporte</option>
+                                    <option value="moradia">🏠 Moradia</option>
+                                    <option value="saude">❤️ Saúde</option>
+                                    <option value="lazer">🎮 Lazer</option>
+                                    <option value="assinaturas">💳 Assinaturas</option>
+                                </optgroup>
+                                <optgroup label="Receitas">
+                                    <option value="salario">💰 Salário</option>
+                                    <option value="freelance">💻 Freelance</option>
+                                    <option value="rendimentos">📈 Rendimentos</option>
+                                </optgroup>
+                                <optgroup label="Empresarial">
+                                    <option value="faturamento">💵 Faturamento</option>
+                                    <option value="fornecedores">📦 Fornecedores</option>
+                                    <option value="funcionarios">👥 Funcionários</option>
+                                    <option value="impostos">📋 Impostos</option>
+                                    <option value="aluguel_comercial">🏪 Aluguel Comercial</option>
+                                    <option value="servicos">🔧 Serviços</option>
+                                </optgroup>
+                                <option value="outros">⚡ Outros</option>
+                            </select>
+                        </div>
+                        <div class="fin-recurring-add-row">
+                            <input type="text" id="fin-rec-desc" class="fin-add-input" placeholder="Descrição (ex: Aluguel, Netflix)" />
+                            <select id="fin-rec-frequency" class="fin-add-input">
+                                <option value="monthly">📅 Mensal</option>
+                                <option value="weekly">📆 Semanal</option>
+                                <option value="daily">🔁 Diária</option>
+                                <option value="yearly">📌 Anual</option>
+                            </select>
+                            <input type="number" id="fin-rec-day" class="fin-add-input" placeholder="Dia" min="1" max="31" />
+                            <input type="date" id="fin-rec-start" class="fin-add-input" title="Data início" />
+                            <button class="fin-add-btn" onclick="window.app.financeManager.addRecurring()"><i class="fas fa-plus"></i></button>
+                        </div>
+                    </div>
+                    <div id="fin-recurring-list" class="fin-recurring-list"></div>
+                </div>
+            </div>
+
+            <!-- TAB: Accounts -->
+            <div class="fin-tab-panel" id="fin-panel-accounts">
+                <div class="fin-section-card">
+                    <h3 class="fin-section-title"><i class="fas fa-wallet"></i> Gerenciamento de Contas</h3>
+                    <p class="fin-section-desc">Organize suas finanças separando contas pessoais e empresariais</p>
+                    <div class="fin-account-add-row">
+                        <input type="text" id="fin-account-name" class="fin-add-input" placeholder="Nome da conta" />
+                        <select id="fin-account-scope" class="fin-add-input fin-scope-select">
+                            <option value="personal">👤 Pessoal</option>
+                            <option value="business">🏢 Empresa</option>
+                        </select>
+                        <select id="fin-account-type" class="fin-add-input">
+                            <option value="checking">🏦 Conta Corrente</option>
+                            <option value="savings">🐷 Poupança</option>
+                            <option value="credit">💳 Cartão de Crédito</option>
+                            <option value="wallet">👛 Carteira</option>
+                            <option value="investment">📈 Investimento</option>
+                            <option value="business_checking">🏢 Conta PJ</option>
+                        </select>
+                        <input type="number" id="fin-account-balance" class="fin-add-input" placeholder="Saldo R$" step="0.01" />
+                        <button class="fin-add-btn" onclick="window.app.financeManager.addAccount()"><i class="fas fa-plus"></i></button>
+                    </div>
+                    <div id="fin-accounts-list"></div>
+                </div>
             </div>
 
             <!-- TAB: Goals (Metas) -->
