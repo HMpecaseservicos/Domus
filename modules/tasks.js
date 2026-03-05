@@ -603,8 +603,8 @@ class TaskManager {
     // ===== HELPERS =====
     _calcTaskProgress(task) { return this._calcSubtasksProgress(task.subtasks || []); }
     _calcSubtasksProgress(subtasks) { const total = subtasks.length; if (!total) return 0; const done = subtasks.filter(s => s.done).length; return Math.round((done / total) * 100); }
-    _formatDue(date, time) { if (!date) return 'Sem prazo'; const d = new Date(`${date}T12:00:00`); const dateLabel = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }); return time ? `${dateLabel} as ${time}` : dateLabel; }
-    _formatDueShort(date) { if (!date) return ''; const d = new Date(`${date}T12:00:00`); return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }); }
+    _formatDue(date, time) { if (!date) return 'Sem prazo'; const dateStr = String(date).split('T')[0]; const d = new Date(`${dateStr}T12:00:00`); if (isNaN(d.getTime())) return 'Sem prazo'; const dateLabel = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }); return time ? `${dateLabel} às ${time}` : dateLabel; }
+    _formatDueShort(date) { if (!date) return ''; const dateStr = String(date).split('T')[0]; const d = new Date(`${dateStr}T12:00:00`); if (isNaN(d.getTime())) return ''; return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }); }
     _formatReminder(iso) { if (!iso) return ''; const d = new Date(iso); return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); }
     _parseTags(raw) { return raw.split(',').map(x => x.trim()).filter(Boolean).slice(0, 12); }
     _priorityLabel(p) { return { high: 'Alta', medium: 'Média', low: 'Baixa' }[p] || 'Baixa'; }
@@ -618,7 +618,8 @@ class TaskManager {
         if (Array.isArray(t.subtask_items) && t.subtask_items.length > 0) subtasks = t.subtask_items.map(s => ({ id: s.id, text: s.text, done: !!s.completed }));
         else { try { const raw = typeof t.subtasks === 'string' ? JSON.parse(t.subtasks) : (t.subtasks || []); subtasks = raw.map(s => ({ id: s.id || Date.now(), text: s.text || String(s), done: !!s.done || !!s.completed })); } catch { subtasks = []; } }
         const tags = typeof t.tags === 'string' ? t.tags.split(',').map(x => x.trim()).filter(Boolean) : (Array.isArray(t.tags) ? t.tags : []);
-        return { id: t.id, text: t.text, category: t.category || '', notes: t.notes || '', priority: t.priority || 'low', status: t.status || 'todo', dueDate: t.due_date || null, dueTime: t.due_time || '', estimatedMinutes: t.estimated_minutes || 0, reminderAt: t.reminder_at || null, tags, subtasks, completed: !!(t.completed || t.status === 'done'), createdAt: t.created_at || new Date().toISOString(), completedAt: t.completed_at || null };
+        const dueDate = t.due_date ? String(t.due_date).split('T')[0] : null;
+        return { id: t.id, text: t.text, category: t.category || '', notes: t.notes || '', priority: t.priority || 'low', status: t.status || 'todo', dueDate, dueTime: t.due_time || '', estimatedMinutes: t.estimated_minutes || 0, reminderAt: t.reminder_at || null, tags, subtasks, completed: !!(t.completed || t.status === 'done'), createdAt: t.created_at || new Date().toISOString(), completedAt: t.completed_at || null };
     }
 
     _toServerTask(task) {
