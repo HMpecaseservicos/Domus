@@ -141,6 +141,15 @@ class FinanceManager {
                 this._switchTab(tab);
             });
         });
+
+        // Debt filter tabs
+        document.querySelectorAll('.fin-debt-filter').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.fin-debt-filter').forEach(b => b.classList.remove('active'));
+                e.currentTarget.classList.add('active');
+                this.renderDebts();
+            });
+        });
     }
 
     _switchTab(tab) {
@@ -1092,6 +1101,7 @@ class FinanceManager {
     }
 
     async addDebt() {
+        const scope = document.getElementById('fin-debt-scope')?.value || 'personal';
         const name = document.getElementById('fin-debt-name')?.value?.trim();
         const creditor = document.getElementById('fin-debt-creditor')?.value?.trim() || '';
         const totalAmount = parseFloat(document.getElementById('fin-debt-amount')?.value) || 0;
@@ -1100,6 +1110,7 @@ class FinanceManager {
         const dueDay = parseInt(document.getElementById('fin-debt-due-day')?.value) || 1;
         const category = document.getElementById('fin-debt-category')?.value || 'outros';
         const priority = parseInt(document.getElementById('fin-debt-priority')?.value) || 2;
+        const accountId = document.getElementById('fin-debt-account')?.value || null;
         const notes = document.getElementById('fin-debt-notes')?.value || '';
 
         if (!name || totalAmount <= 0) {
@@ -1107,7 +1118,7 @@ class FinanceManager {
             return;
         }
 
-        const debt = { name, creditor, total_amount: totalAmount, interest_rate: interestRate, total_installments: totalInstallments, due_day: dueDay, category, priority, notes };
+        const debt = { name, creditor, scope, account_id: accountId ? parseInt(accountId) : null, total_amount: totalAmount, interest_rate: interestRate, total_installments: totalInstallments, due_day: dueDay, category, priority, notes };
 
         try {
             if (this.auth.getToken()) {
@@ -1173,55 +1184,99 @@ class FinanceManager {
         const summaryEl = document.getElementById('fin-debts-summary');
         if (!container) return;
 
+        // Update account select in debt form
+        const debtAccountSelect = document.getElementById('fin-debt-account');
+        if (debtAccountSelect) {
+            const personalAccounts = this.accounts.filter(a => a.scope !== 'business');
+            const businessAccounts = this.accounts.filter(a => a.scope === 'business');
+            debtAccountSelect.innerHTML = '<option value="">Vincular a conta (opcional)</option>' +
+                (personalAccounts.length ? `<optgroup label="👤 Pessoal">${personalAccounts.map(a => `<option value="${a.id}">${this._escapeHTML(a.name)}</option>`).join('')}</optgroup>` : '') +
+                (businessAccounts.length ? `<optgroup label="🏢 Empresa">${businessAccounts.map(a => `<option value="${a.id}">${this._escapeHTML(a.name)}</option>`).join('')}</optgroup>` : '');
+        }
+
+        // Get active filter
+        const activeFilter = document.querySelector('.fin-debt-filter.active')?.dataset?.filter || 'all';
+        
+        // Filter debts
+        let filteredDebts = this.debts;
+        if (activeFilter === 'personal') {
+            filteredDebts = this.debts.filter(d => d.scope !== 'business');
+        } else if (activeFilter === 'business') {
+            filteredDebts = this.debts.filter(d => d.scope === 'business');
+        }
+
         // Summary
-        if (summaryEl && this.debtsSummary) {
-            const s = this.debtsSummary;
-            const pctPaid = s.totalDebtAmount > 0 ? (s.totalPaid / s.totalDebtAmount * 100) : 0;
+        if (summaryEl) {
+            const personalDebts = this.debts.filter(d => d.scope !== 'business');
+            const businessDebts = this.debts.filter(d => d.scope === 'business');
+            const personalTotal = personalDebts.reduce((s, d) => s + (d.total_amount - (d.paid_amount || 0)), 0);
+            const businessTotal = businessDebts.reduce((s, d) => s + (d.total_amount - (d.paid_amount || 0)), 0);
+            const totalRemaining = personalTotal + businessTotal;
+            const totalPaid = this.debts.reduce((s, d) => s + (d.paid_amount || 0), 0);
+            const totalAmount = this.debts.reduce((s, d) => s + d.total_amount, 0);
+            const pctPaid = totalAmount > 0 ? (totalPaid / totalAmount * 100) : 0;
+            
             summaryEl.innerHTML = `
                 <div class="fin-debt-summary-grid">
-                    <div class="fin-debt-kpi">
-                        <span class="kpi-value">${s.activeDebts}</span>
-                        <span class="kpi-label">Ativas</span>
+                    <div class="fin-debt-kpi personal">
+                        <span class="kpi-icon"><i class="fas fa-user"></i></span>
+                        <span class="kpi-value">${this._formatBRL(personalTotal)}</span>
+                        <span class="kpi-label">Dívidas Pessoais</span>
                     </div>
-                    <div class="fin-debt-kpi">
-                        <span class="kpi-value">${s.paidDebts}</span>
-                        <span class="kpi-label">Quitadas</span>
+                    <div class="fin-debt-kpi business">
+                        <span class="kpi-icon"><i class="fas fa-building"></i></span>
+                        <span class="kpi-value">${this._formatBRL(businessTotal)}</span>
+                        <span class="kpi-label">Dívidas Empresariais</span>
                     </div>
-                    <div class="fin-debt-kpi">
-                        <span class="kpi-value negative">${this._formatBRL(s.totalRemaining)}</span>
+                    <div class="fin-debt-kpi total">
+                        <span class="kpi-icon"><i class="fas fa-exclamation-triangle"></i></span>
+                        <span class="kpi-value negative">${this._formatBRL(totalRemaining)}</span>
                         <span class="kpi-label">Total Restante</span>
                     </div>
-                    <div class="fin-debt-kpi">
+                    <div class="fin-debt-kpi progress">
+                        <span class="kpi-icon"><i class="fas fa-chart-line"></i></span>
                         <span class="kpi-value positive">${pctPaid.toFixed(0)}%</span>
-                        <span class="kpi-label">Progresso</span>
+                        <span class="kpi-label">Progresso Geral</span>
                     </div>
                 </div>
             `;
         }
 
-        if (!this.debts.length) {
-            container.innerHTML = '<div class="fin-empty-cats">Nenhuma dívida cadastrada</div>';
+        if (!filteredDebts.length) {
+            container.innerHTML = `<div class="fin-empty-cats">Nenhuma dívida ${activeFilter === 'business' ? 'empresarial' : activeFilter === 'personal' ? 'pessoal' : ''} cadastrada</div>`;
             return;
         }
 
         const priorityLabels = { 1: '🔴 Alta', 2: '🟡 Média', 3: '🟢 Baixa' };
-        const categoryIcons = { cartao: 'fa-credit-card', emprestimo: 'fa-hand-holding-usd', financiamento: 'fa-car', outros: 'fa-file-invoice-dollar' };
+        const categoryIcons = { 
+            cartao: 'fa-credit-card', emprestimo: 'fa-hand-holding-usd', financiamento: 'fa-car', 
+            financiamento_imovel: 'fa-home', consignado: 'fa-money-check', cheque_especial: 'fa-file-invoice',
+            capital_giro: 'fa-coins', fornecedor: 'fa-truck', equipamento: 'fa-desktop',
+            imposto_divida: 'fa-landmark', leasing: 'fa-car-alt', antecipacao: 'fa-credit-card',
+            socio: 'fa-handshake', outros: 'fa-file-invoice-dollar'
+        };
 
-        container.innerHTML = this.debts.map(d => {
-            const pct = d.total_amount > 0 ? Math.min((d.paid_amount / d.total_amount) * 100, 100) : 0;
-            const remaining = Math.max(d.total_amount - d.paid_amount, 0);
+        container.innerHTML = filteredDebts.map(d => {
+            const pct = d.total_amount > 0 ? Math.min(((d.paid_amount || 0) / d.total_amount) * 100, 100) : 0;
+            const remaining = Math.max(d.total_amount - (d.paid_amount || 0), 0);
             const statusClass = d.status === 'paid' ? 'paid' : pct >= 80 ? 'almost' : '';
-            const installmentText = d.total_installments > 1 ? `${d.paid_installments}/${d.total_installments} parcelas` : 'À vista';
+            const installmentText = d.total_installments > 1 ? `${d.paid_installments || 0}/${d.total_installments} parcelas` : 'À vista';
             const icon = categoryIcons[d.category] || 'fa-file-invoice-dollar';
+            const scopeBadge = d.scope === 'business' 
+                ? '<span class="fin-debt-scope-badge business"><i class="fas fa-building"></i> Empresa</span>'
+                : '<span class="fin-debt-scope-badge personal"><i class="fas fa-user"></i> Pessoal</span>';
 
             return `
-                <div class="fin-debt-card ${statusClass}">
+                <div class="fin-debt-card ${statusClass}" data-scope="${d.scope || 'personal'}">
                     <div class="fin-debt-header">
                         <div class="fin-debt-icon">
                             <i class="fas ${icon}"></i>
                         </div>
                         <div class="fin-debt-info">
-                            <span class="fin-debt-name">${this._escapeHTML(d.name)}</span>
+                            <div class="fin-debt-name-row">
+                                <span class="fin-debt-name">${this._escapeHTML(d.name)}</span>
+                                ${scopeBadge}
+                            </div>
                             ${d.creditor ? `<span class="fin-debt-creditor"><i class="fas fa-building"></i> ${this._escapeHTML(d.creditor)}</span>` : ''}
                             <span class="fin-debt-priority">${priorityLabels[d.priority] || '🟡 Média'}</span>
                         </div>
@@ -1234,7 +1289,7 @@ class FinanceManager {
                         </div>
                         <div class="fin-debt-paid">
                             <span class="label">Pago</span>
-                            <span class="value positive">${this._formatBRL(d.paid_amount)}</span>
+                            <span class="value positive">${this._formatBRL(d.paid_amount || 0)}</span>
                         </div>
                         <div class="fin-debt-remaining">
                             <span class="label">Restante</span>
@@ -1723,35 +1778,68 @@ class FinanceManager {
             <!-- TAB: Debts (Dívidas) -->
             <div class="fin-tab-panel" id="fin-panel-debts">
                 <div class="fin-section-card fin-debts-section">
-                    <h3 class="fin-section-title"><i class="fas fa-file-invoice-dollar"></i> Controle de Dívidas</h3>
+                    <div class="fin-section-header">
+                        <h3 class="fin-section-title"><i class="fas fa-file-invoice-dollar"></i> Controle de Dívidas</h3>
+                        <div class="fin-debt-filter-tabs">
+                            <button class="fin-debt-filter active" data-filter="all">Todas</button>
+                            <button class="fin-debt-filter" data-filter="personal">👤 Pessoais</button>
+                            <button class="fin-debt-filter" data-filter="business">🏢 Empresariais</button>
+                        </div>
+                    </div>
+                    <p class="fin-section-desc">Gerencie suas dívidas pessoais e empresariais em um só lugar</p>
                     <div id="fin-debts-summary"></div>
+                    
                     <div class="fin-debt-add-form">
-                        <div class="fin-debt-add-row">
-                            <input type="text" id="fin-debt-name" class="fin-add-input" placeholder="Nome da dívida" />
-                            <input type="text" id="fin-debt-creditor" class="fin-add-input" placeholder="Credor (banco, loja...)" />
-                            <input type="number" id="fin-debt-amount" class="fin-add-input" placeholder="Valor total R$" step="0.01" min="0" />
+                        <div class="fin-debt-form-header">
+                            <i class="fas fa-plus-circle"></i> Nova Dívida
                         </div>
                         <div class="fin-debt-add-row">
+                            <select id="fin-debt-scope" class="fin-add-input fin-scope-select">
+                                <option value="personal">👤 Pessoal</option>
+                                <option value="business">🏢 Empresa</option>
+                            </select>
+                            <input type="text" id="fin-debt-name" class="fin-add-input" placeholder="Nome da dívida" />
+                            <input type="text" id="fin-debt-creditor" class="fin-add-input" placeholder="Credor (banco, fornecedor...)" />
+                        </div>
+                        <div class="fin-debt-add-row">
+                            <input type="number" id="fin-debt-amount" class="fin-add-input" placeholder="Valor total R$" step="0.01" min="0" />
                             <input type="number" id="fin-debt-interest" class="fin-add-input" placeholder="Juros % (mensal)" step="0.01" min="0" />
                             <input type="number" id="fin-debt-installments" class="fin-add-input" placeholder="Nº parcelas" min="1" value="1" />
                             <input type="number" id="fin-debt-due-day" class="fin-add-input" placeholder="Dia vencimento" min="1" max="31" />
                         </div>
                         <div class="fin-debt-add-row">
                             <select id="fin-debt-category" class="fin-add-input">
-                                <option value="cartao">💳 Cartão de Crédito</option>
-                                <option value="emprestimo">🏦 Empréstimo</option>
-                                <option value="financiamento">🚗 Financiamento</option>
+                                <optgroup label="Dívidas Pessoais">
+                                    <option value="cartao">💳 Cartão de Crédito</option>
+                                    <option value="emprestimo">🏦 Empréstimo Pessoal</option>
+                                    <option value="financiamento">🚗 Financiamento Veículo</option>
+                                    <option value="financiamento_imovel">🏠 Financiamento Imóvel</option>
+                                    <option value="consignado">💵 Consignado</option>
+                                    <option value="cheque_especial">📜 Cheque Especial</option>
+                                </optgroup>
+                                <optgroup label="Dívidas Empresariais">
+                                    <option value="capital_giro">💰 Capital de Giro</option>
+                                    <option value="fornecedor">📦 Fornecedor</option>
+                                    <option value="equipamento">🖥️ Equipamentos</option>
+                                    <option value="imposto_divida">📋 Impostos/Tributos</option>
+                                    <option value="leasing">🚚 Leasing</option>
+                                    <option value="antecipacao">💳 Antecipação Recebíveis</option>
+                                    <option value="socio">🤝 Empréstimo de Sócio</option>
+                                </optgroup>
                                 <option value="outros">📄 Outros</option>
                             </select>
                             <select id="fin-debt-priority" class="fin-add-input">
-                                <option value="1">🔴 Alta Prioridade</option>
-                                <option value="2" selected>🟡 Média Prioridade</option>
-                                <option value="3">🟢 Baixa Prioridade</option>
+                                <option value="1">🔴 Alta (juros altos/vencida)</option>
+                                <option value="2" selected>🟡 Média</option>
+                                <option value="3">🟢 Baixa (juros baixos)</option>
                             </select>
-                            <button class="fin-add-btn" onclick="window.app.financeManager.addDebt()"><i class="fas fa-plus"></i> Adicionar</button>
+                            <select id="fin-debt-account" class="fin-add-input">
+                                <option value="">Vincular a conta (opcional)</option>
+                            </select>
                         </div>
                         <div class="fin-debt-add-row">
-                            <textarea id="fin-debt-notes" class="fin-add-input fin-debt-notes" placeholder="Observações (opcional)"></textarea>
+                            <textarea id="fin-debt-notes" class="fin-add-input fin-debt-notes" placeholder="Observações: contrato, condições, contato..."></textarea>
+                            <button class="fin-add-btn fin-debt-add-btn" onclick="window.app.financeManager.addDebt()"><i class="fas fa-plus"></i> Adicionar Dívida</button>
                         </div>
                     </div>
                     <div id="fin-debts-list"></div>
