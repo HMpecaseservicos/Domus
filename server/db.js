@@ -601,6 +601,20 @@ async function init() {
     await client.query('CREATE INDEX IF NOT EXISTS idx_debts_user_id ON debts(user_id);');
     await client.query('CREATE INDEX IF NOT EXISTS idx_debts_status ON debts(status);');
 
+    // Migration: add scope and account_id columns to debts
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE debts ADD COLUMN IF NOT EXISTS scope VARCHAR(20) DEFAULT 'personal';
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE debts ADD COLUMN IF NOT EXISTS account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+
     // ===== DEBT PAYMENTS (Histórico de Pagamentos) =====
     await client.query(`
       CREATE TABLE IF NOT EXISTS debt_payments (

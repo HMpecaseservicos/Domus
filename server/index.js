@@ -1807,13 +1807,13 @@ app.get('/api/debts', authMiddleware, async (req, res) => {
 // POST create debt
 app.post('/api/debts', authMiddleware, async (req, res) => {
   try {
-    const { name, creditor, total_amount, interest_rate, total_installments, due_day, start_date, category, priority, notes } = req.body;
+    const { name, creditor, total_amount, interest_rate, total_installments, due_day, start_date, category, priority, notes, scope, account_id } = req.body;
     if (!name || !total_amount) return res.status(400).json({ message: 'Name and total_amount required' });
     
     const result = await run(`
-      INSERT INTO debts (user_id, name, creditor, total_amount, interest_rate, total_installments, due_day, start_date, category, priority, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
-    `, [req.user.id, name, creditor || '', total_amount, interest_rate || 0, total_installments || 1, due_day || 1, start_date || new Date().toISOString().split('T')[0], category || 'outros', priority || 2, notes || '']);
+      INSERT INTO debts (user_id, name, creditor, total_amount, interest_rate, total_installments, due_day, start_date, category, priority, notes, scope, account_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+    `, [req.user.id, name, creditor || '', total_amount, interest_rate || 0, total_installments || 1, due_day || 1, start_date || new Date().toISOString().split('T')[0], category || 'outros', priority || 2, notes || '', scope || 'personal', account_id || null]);
     
     const newDebt = await get('SELECT * FROM debts WHERE id = ?', [result.lastID]);
     res.json({ debt: { ...newDebt, total_amount: parseFloat(newDebt.total_amount), paid_amount: parseFloat(newDebt.paid_amount), interest_rate: parseFloat(newDebt.interest_rate) }, message: 'Dívida cadastrada!' });
@@ -1829,11 +1829,11 @@ app.put('/api/debts/:id', authMiddleware, async (req, res) => {
     const debt = await get('SELECT * FROM debts WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
     if (!debt) return res.status(404).json({ message: 'Debt not found' });
     
-    const { name, creditor, total_amount, interest_rate, total_installments, due_day, category, priority, status, notes } = req.body;
+    const { name, creditor, total_amount, interest_rate, total_installments, due_day, category, priority, status, notes, scope, account_id } = req.body;
     await run(`
-      UPDATE debts SET name = ?, creditor = ?, total_amount = ?, interest_rate = ?, total_installments = ?, due_day = ?, category = ?, priority = ?, status = ?, notes = ?
+      UPDATE debts SET name = ?, creditor = ?, total_amount = ?, interest_rate = ?, total_installments = ?, due_day = ?, category = ?, priority = ?, status = ?, notes = ?, scope = ?, account_id = ?
       WHERE id = ?
-    `, [name || debt.name, creditor ?? debt.creditor, total_amount ?? debt.total_amount, interest_rate ?? debt.interest_rate, total_installments ?? debt.total_installments, due_day ?? debt.due_day, category ?? debt.category, priority ?? debt.priority, status ?? debt.status, notes ?? debt.notes, req.params.id]);
+    `, [name || debt.name, creditor ?? debt.creditor, total_amount ?? debt.total_amount, interest_rate ?? debt.interest_rate, total_installments ?? debt.total_installments, due_day ?? debt.due_day, category ?? debt.category, priority ?? debt.priority, status ?? debt.status, notes ?? debt.notes, scope ?? debt.scope ?? 'personal', account_id ?? debt.account_id, req.params.id]);
     
     const updated = await get('SELECT * FROM debts WHERE id = ?', [req.params.id]);
     res.json({ debt: { ...updated, total_amount: parseFloat(updated.total_amount), paid_amount: parseFloat(updated.paid_amount) }, message: 'Dívida atualizada!' });
